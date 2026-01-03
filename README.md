@@ -19,8 +19,7 @@ A sleek, modern music control bar for Wayland compositors (Hyprland, Niri, Sway,
 
 
 ### IMPORTANT
-Place the config.conf file by creating a new folder in ~./config, called hyprwave, and place the file there. The main code will read the config.conf from this directory, and hence anchor the hyprwave accordingly. Edit it to your pleasing.
-
+Place the config.conf file by creating a new folder in ~/.config, called hyprwave, and place the file there. The main code will read the config.conf from this directory, and hence anchor the hyprwave accordingly. Edit it to your pleasing.
 
 ## ✨ Features
 
@@ -30,12 +29,12 @@ Place the config.conf file by creating a new folder in ~./config, called hyprwav
 - **Live Progress Tracking** - Real-time progress bar with countdown timer
 - **Full Playback Controls** - Play/Pause, Next, Previous buttons
 - **Expandable Panel** - Click to reveal detailed track information
+- **Configurable Layout** - Position on any screen edge (left, right, top, bottom)
 - **Minimal Resource Usage** - ~80-95MB RAM, <0.3% CPU
 
-## 📸 Screenshots
 
 ### Collapsed State
-The control bar sits on the right edge of your screen with essential controls.
+The control bar sits on your chosen screen edge with essential controls.
 
 ### Expanded State
 Click the expand button to reveal:
@@ -69,29 +68,35 @@ cd hyprwave
 # Build
 make
 
-# Run
+# Install to ~/.local/bin (recommended)
+make install
+
+# Or run directly from source
 ./hyprwave
 ```
 
 ### Installing
 ```bash
-# Install to ~/.local/bin
+# Install to ~/.local/bin (default)
 make install
 
-# Or manually copy
-cp hyprwave ~/.local/bin/
-cp -r icons ~/.local/share/hyprwave/
-cp style.css ~/.local/share/hyprwave/
+# Uninstall
+make uninstall
 ```
 
-## 🎵 Usage
+The installer will:
+- Copy binary to `~/.local/bin/hyprwave`
+- Install resources to `~/.local/share/hyprwave/`
+- Create config directory at `~/.config/hyprwave/`
+
+## Usage
 
 ### Basic Usage
 
 1. **Start a music player** - Launch Spotify, VLC, or any MPRIS-compatible player
 2. **Run HyprWave** - Execute `./hyprwave` or `hyprwave` if installed
-3. **Control your music** - The bar appears on the right edge with playback controls
-4. **Expand for details** - Click the purple expand button (←) to see album info
+3. **Control your music** - The bar appears on your configured edge with playback controls
+4. **Expand for details** - Click the expand button to see album info
 5. **Collapse** - Click again to hide the details panel
 
 ### Supported Music Players
@@ -119,9 +124,35 @@ HyprWave works best with **native desktop applications**:
 - **▶/⏸ Play/Pause** (Blue button) - Toggle playback
 - **⏮ Previous** (Gray button) - Previous track
 - **⏭ Next** (Gray button) - Next track
-- **← Expand** (Purple button) - Show/hide album details
+- **Expand** (Purple button) - Show/hide album details (arrow direction changes based on layout)
 
 ## ⚙️ Configuration
+
+### Layout Configuration
+
+HyprWave now supports flexible positioning! Edit `~/.config/hyprwave/config.conf`:
+
+```conf
+# HyprWave Configuration File
+
+[General]
+# Edge to anchor HyprWave to
+# Options: right, left, top, bottom
+edge = right
+
+# Margin from the screen edge (in pixels)
+margin = 10
+```
+
+**Layout Options:**
+- **`edge = right`** - Vertical layout on right edge (default)
+- **`edge = left`** - Vertical layout on left edge
+- **`edge = top`** - Horizontal layout on top edge
+- **`edge = bottom`** - Horizontal layout on bottom edge
+
+The UI automatically adapts:
+- **Vertical layouts** (left/right): Controls stack vertically, panel expands horizontally
+- **Horizontal layouts** (top/bottom): Controls arranged horizontally, panel expands vertically
 
 ### Icons
 
@@ -130,10 +161,10 @@ Place your custom SVG icons in the `icons/` directory:
 - `pause.svg` - Pause button icon
 - `next.svg` - Next track icon
 - `previous.svg` - Previous track icon
-- `arrow-left.svg` - Expand button (collapsed state)
-- `arrow-right.svg` - Collapse button (expanded state)
-- `arrow-up.svg` - Expand/Collapse button
-- `arrow-down.svg`= Expand/Collapse button
+- `arrow-left.svg` - Expand button (for vertical layouts)
+- `arrow-right.svg` - Collapse button (for vertical layouts)
+- `arrow-up.svg` - Expand button (for horizontal layouts)
+- `arrow-down.svg` - Collapse button (for horizontal layouts)
 
 ### Styling
 
@@ -147,14 +178,14 @@ Customize colors, sizes, and appearance by editing `style.css`. The design uses:
 
 Add to your `~/.config/hypr/hyprland.conf`:
 ```conf
-exec-once = /path/to/hyprwave
+exec-once = hyprwave
 ```
 
 ### Auto-start with Niri
 
 Add to your `~/.config/niri/config.kdl`:
 ```kdl
-spawn-at-startup "/path/to/hyprwave"
+spawn-at-startup "hyprwave"
 ```
 
 ## 🛠️ Technical Details
@@ -176,20 +207,32 @@ HyprWave communicates with media players via the MPRIS D-Bus interface:
 - Updates position/progress every second
 - Fetches album art from local files or HTTP URLs
 
-### IMPORTANT
-Place the config.conf file by creating a new directory in ~./config, called hyprwave, and place the file there. The main code will read the config.conf from this directory, and hence anchor the hyprwave accordingly. Edit it to your pleasing.
+### File Paths
+
+HyprWave searches for resources in the following order:
+
+1. **Local directory** (for development): `./icons/`, `./style.css`
+2. **User installation**: `~/.local/share/hyprwave/`
+3. **System installation**: `/usr/share/hyprwave/`
+
+Configuration file: `~/.config/hyprwave/config.conf`
 
 ## 🗺️ Roadmap
 
-### v0.2.0 (Planned)
+### v0.2.0 (Completed)
+- [x] **Configuration file** - Flexible layout positioning
+- [x] **Multiple edge support** - Left, right, top, bottom anchoring
+- [x] **Adaptive UI** - Automatic layout switching
+
+### v0.3.0 (Planned)
 - [ ] **Keybind toggle** - Show/hide with configurable keybind (e.g., Super+Shift+M)
 - [ ] **Slide-in animation** - Smooth reveal from screen edge
-- [ ] **Configuration file** - TOML/JSON config for settings
 - [ ] **Auto-hide** - Optional auto-hide when not in use
-
-### v0.3.0 (Future)
 - [ ] **Multiple players** - Switch between active media players
+
+### v0.4.0 (Future)
 - [ ] **Theming system** - Pre-built color themes
+- [ ] **Custom dimensions** - Configurable sizes for buttons and panels
 
 ### v1.0.0 (Goals)
 - [ ] **Full customization** - Position, size, colors, layout via config
@@ -206,12 +249,20 @@ Contributions are welcome! Feel free to:
 - Improve documentation
 - Share your custom themes/icons
 
+## 📝 License
+
+This project is open source. Feel free to use, modify, and distribute.
+
 ## 🙏 Acknowledgments
 
 - Built with [GTK4](https://gtk.org/)
 - Uses [gtk4-layer-shell](https://github.com/wmww/gtk-layer-shell)
 - Inspired by [waybar](https://github.com/Alexays/Waybar) and modern music players
 - MPRIS specification by freedesktop.org
+
+## 💬 Support
+
+- **Issues:** [GitHub Issues](https://github.com/shantanubaddar/hyprwave/issues)
 
 ## 💬 Support
 
