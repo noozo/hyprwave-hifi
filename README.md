@@ -1,9 +1,25 @@
 # 🌊 HyprWave
 
 A sleek, modern music control bar for Wayland compositors (Hyprland, Niri, Sway, etc.) with MPRIS integration.
-
+### Right
 <img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/3692e345-0f3a-4a17-9196-8ff9ba22171f" />
 <img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/a9b45a78-837a-4689-b5a3-0c0c25e1e924" />
+
+### Top
+<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/9270b4ca-3042-4842-9172-622addf4d56c" />
+<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/28620bbb-bede-4602-97e9-70a39b83de43" />
+
+### Bottom
+<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/620b65fe-7d35-4426-ae77-941174c77b35" />
+<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/4b103396-ee4e-4031-b40c-352119079af0" />
+
+### Left
+<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/53c24894-f253-40a8-9983-49a43cc7285a" />
+<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/cc5a9ab6-a262-4991-bf8c-debb4c910164" />
+
+
+### IMPORTANT
+Place the config.conf file by creating a new folder in ~./config, called hyprwave, and place the file there. The main code will read the config.conf from this directory, and hence anchor the hyprwave accordingly. Edit it to your pleasing.
 
 
 ## ✨ Features
@@ -116,6 +132,8 @@ Place your custom SVG icons in the `icons/` directory:
 - `previous.svg` - Previous track icon
 - `arrow-left.svg` - Expand button (collapsed state)
 - `arrow-right.svg` - Collapse button (expanded state)
+- `arrow-up.svg` - Expand/Collapse button
+- `arrow-down.svg`= Expand/Collapse button
 
 ### Styling
 
@@ -158,12 +176,8 @@ HyprWave communicates with media players via the MPRIS D-Bus interface:
 - Updates position/progress every second
 - Fetches album art from local files or HTTP URLs
 
-## 📋 Known Limitations (v0.1.0)
-
-- **Right-edge only** - Currently anchored to right side, vertical layout only
-- **Always visible** - No hide/show keybind yet (coming in v0.2.0)
-- **Web player metadata** - Limited support for browser-based players
-- **Single player** - Shows only the first detected player (multi-player switching planned)
+### IMPORTANT
+Place the config.conf file by creating a new directory in ~./config, called hyprwave, and place the file there. The main code will read the config.conf from this directory, and hence anchor the hyprwave accordingly. Edit it to your pleasing.
 
 ## 🗺️ Roadmap
 
@@ -174,8 +188,6 @@ HyprWave communicates with media players via the MPRIS D-Bus interface:
 - [ ] **Auto-hide** - Optional auto-hide when not in use
 
 ### v0.3.0 (Future)
-- [ ] **Multi-edge support** - Top, Bottom, Left positioning
-- [ ] **Horizontal layout** - For top/bottom edges
 - [ ] **Multiple players** - Switch between active media players
 - [ ] **Theming system** - Pre-built color themes
 
