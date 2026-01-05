@@ -26,7 +26,14 @@ LayoutConfig* layout_load_config(void) {
             "edge = right\n"
             "\n"
             "# Margin from the screen edge (in pixels)\n"
-            "margin = 10\n";
+            "margin = 10\n"
+            "\n"
+            "[Keybinds]\n"
+            "# Toggle HyprWave visibility (hide/show entire window)\n"
+            "toggle_visibility = Super+Shift+M\n"
+            "\n"
+            "# Toggle expanded section (show/hide album details)\n"
+            "toggle_expand = Super+M\n";
         
         g_file_set_contents(config_file, default_config, -1, NULL);
         g_print("Created default config at: %s\n", config_file);
@@ -34,10 +41,15 @@ LayoutConfig* layout_load_config(void) {
     
     // Load config
     GKeyFile *keyfile = g_key_file_new();
-    config->edge = EDGE_RIGHT; // default
-    config->margin = 10; // default
+    
+    // Set defaults
+    config->edge = EDGE_RIGHT;
+    config->margin = 10;
+    config->toggle_visibility_bind = g_strdup("Super+Shift+M");
+    config->toggle_expand_bind = g_strdup("Super+M");
     
     if (g_key_file_load_from_file(keyfile, config_file, G_KEY_FILE_NONE, NULL)) {
+        // Load General section
         gchar *edge_str = g_key_file_get_string(keyfile, "General", "edge", NULL);
         
         if (edge_str) {
@@ -55,6 +67,19 @@ LayoutConfig* layout_load_config(void) {
         
         config->margin = g_key_file_get_integer(keyfile, "General", "margin", NULL);
         if (config->margin == 0) config->margin = 10;
+        
+        // Load Keybinds section (optional)
+        gchar *vis_bind = g_key_file_get_string(keyfile, "Keybinds", "toggle_visibility", NULL);
+        if (vis_bind) {
+            g_free(config->toggle_visibility_bind);
+            config->toggle_visibility_bind = vis_bind;
+        }
+        
+        gchar *exp_bind = g_key_file_get_string(keyfile, "Keybinds", "toggle_expand", NULL);
+        if (exp_bind) {
+            g_free(config->toggle_expand_bind);
+            config->toggle_expand_bind = exp_bind;
+        }
     }
     
     config->is_vertical = (config->edge == EDGE_RIGHT || config->edge == EDGE_LEFT);
@@ -73,7 +98,11 @@ LayoutConfig* layout_load_config(void) {
 }
 
 void layout_free_config(LayoutConfig *config) {
-    g_free(config);
+    if (config) {
+        g_free(config->toggle_visibility_bind);
+        g_free(config->toggle_expand_bind);
+        g_free(config);
+    }
 }
 
 // ========================================
