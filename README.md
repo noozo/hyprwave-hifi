@@ -2,48 +2,45 @@
 
 A sleek, modern music control bar for Wayland compositors (Hyprland, Niri, Sway, etc.) with MPRIS integration.
 ### Right
-<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/3692e345-0f3a-4a17-9196-8ff9ba22171f" />
-<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/a9b45a78-837a-4689-b5a3-0c0c25e1e924" />
+<img width="1331" height="768" alt="image" src="https://github.com/user-attachments/assets/f5e7681d-942e-46f0-84f4-e789dca326cd" />
+<img width="1331" height="768" alt="image" src="https://github.com/user-attachments/assets/e32bda28-491a-419c-890b-3fad5975cc98" />
 
 ### Top
-<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/9270b4ca-3042-4842-9172-622addf4d56c" />
-<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/28620bbb-bede-4602-97e9-70a39b83de43" />
+<img width="1331" height="768" alt="image" src="https://github.com/user-attachments/assets/b1206d4f-a454-4666-bc41-8a34f0619a74" />
+<img width="1331" height="768" alt="image" src="https://github.com/user-attachments/assets/3d46dd03-a777-482f-957b-6fcb8891ccea" />
+
 
 ### Bottom
-<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/620b65fe-7d35-4426-ae77-941174c77b35" />
-<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/4b103396-ee4e-4031-b40c-352119079af0" />
+<img width="1331" height="768" alt="image" src="https://github.com/user-attachments/assets/14236ba6-2e4f-4e18-ba58-67c256a43c0d" />
+<img width="1331" height="768" alt="image" src="https://github.com/user-attachments/assets/4c4d1b79-4e13-48cb-bf61-3d3f17ac5f7d" />
+
 
 ### Left
-<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/53c24894-f253-40a8-9983-49a43cc7285a" />
-<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/cc5a9ab6-a262-4991-bf8c-debb4c910164" />
+<img width="1331" height="768" alt="image" src="https://github.com/user-attachments/assets/697b6ccb-ccad-422e-9d5c-ff75c2cc9645" />
+<img width="1331" height="768" alt="image" src="https://github.com/user-attachments/assets/b6f5a8a6-d251-48c7-a7a3-1c19fa119539" />
 
 
-### IMPORTANT
-Place the config.conf file by creating a new folder in ~/.config, called hyprwave, and place the file there. The main code will read the config.conf from this directory, and hence anchor the hyprwave accordingly. Edit it to your pleasing.
+# HyprWave 🎵
+
+A sleek, modern music control overlay for Wayland compositors (Hyprland, Niri, Sway). Built with GTK4 and gtk4-layer-shell.
 
 ## ✨ Features
 
 - **Elegant Design** - Glassmorphic UI with smooth animations
 - **MPRIS Integration** - Works with Spotify, VLC, and any MPRIS-compatible player
-- **Album Art Display** - Fetches and displays album artwork (local files and HTTP URLs)
+- **Album Art Display** - Fetches and displays album artwork
 - **Live Progress Tracking** - Real-time progress bar with countdown timer
 - **Full Playback Controls** - Play/Pause, Next, Previous buttons
-- **Expandable Panel** - Click to reveal detailed track information
+- **Expandable Panel** - Toggle to reveal detailed track information
+- **Keybind Support** - Hide/show and expand with keyboard shortcuts
 - **Configurable Layout** - Position on any screen edge (left, right, top, bottom)
 - **Minimal Resource Usage** - ~80-95MB RAM, <0.3% CPU
-
 
 ### Collapsed State
 The control bar sits on your chosen screen edge with essential controls.
 
 ### Expanded State
-Click the expand button to reveal:
-- Album cover art (120x120)
-- Source (player name)
-- Track title
-- Artist name
-- Progress bar with visual indicator
-- Time remaining
+Shows album cover, track title, artist, progress bar, and time remaining.
 
 ## 🚀 Installation
 
@@ -65,76 +62,101 @@ sudo dnf install gtk4-devel gtk4-layer-shell-devel
 git clone https://github.com/shantanubaddar/hyprwave.git
 cd hyprwave
 
-# Build
+# Build and install
 make
-
-# Install to ~/.local/bin (recommended)
 make install
-
-# Or run directly from source
-./hyprwave
-```
-
-### Installing
-```bash
-# Install to ~/.local/bin (default)
-make install
-
-# Uninstall
-make uninstall
 ```
 
 The installer will:
 - Copy binary to `~/.local/bin/hyprwave`
 - Install resources to `~/.local/share/hyprwave/`
-- Create config directory at `~/.config/hyprwave/`
+- Install `hyprwave-toggle` script for keybinds
+- Create config at `~/.config/hyprwave/config.conf`
 
-## Usage
+## 🎵 Usage
 
-### Basic Usage
+### Quick Start
 
-1. **Start a music player** - Launch Spotify, VLC, or any MPRIS-compatible player
-2. **Run HyprWave** - Execute `./hyprwave` or `hyprwave` if installed
-3. **Control your music** - The bar appears on your configured edge with playback controls
-4. **Expand for details** - Click the expand button to see album info
-5. **Collapse** - Click again to hide the details panel
+1. **Install and run HyprWave**: `hyprwave`
+2. **Start a music player** (Spotify, VLC, etc.)
+3. **Control your music** with the on-screen controls
+4. **Use keybinds** for quick access (see configuration below)
 
 ### Supported Music Players
-
-HyprWave works best with **native desktop applications**:
 
 ✅ **Fully Supported:**
 - Spotify (Desktop app)
 - VLC Media Player
-- Rhythmbox
-- Audacious
-- Clementine
-- Strawberry
-- MPD with mpDris2
-- Any MPRIS2-compatible player
+- Any MPRIS2-compatible player (Rhythmbox, Audacious, MPD with mpDris2, etc.)
 
 ⚠️ **Limited Support:**
-- Web browsers (Chromium/Brave/Chrome) - Basic controls only, no metadata
-- Firefox - Partial metadata support
-
-**Recommendation:** Use desktop music apps for full functionality (album art, track info, etc.)
-
-### Controls
-
-- **▶/⏸ Play/Pause** (Blue button) - Toggle playback
-- **⏮ Previous** (Gray button) - Previous track
-- **⏭ Next** (Gray button) - Next track
-- **Expand** (Purple button) - Show/hide album details (arrow direction changes based on layout)
+- Web browsers - Basic controls only, no metadata
 
 ## ⚙️ Configuration
 
-### Layout Configuration
+### Keybinds (v0.3.0+)
 
-HyprWave now supports flexible positioning! Edit `~/.config/hyprwave/config.conf`:
+HyprWave supports keybinds for toggling visibility and expanding details. **Add these to your compositor config:**
+
+#### Hyprland
+
+Add to `~/.config/hypr/hyprland.conf`:
 
 ```conf
-# HyprWave Configuration File
+# HyprWave keybinds
+bind = SUPER_SHIFT, M, exec, hyprwave-toggle visibility
+bind = SUPER, M, exec, hyprwave-toggle expand
+```
 
+Then reload: `hyprctl reload`
+
+#### Niri
+
+Add to `~/.config/niri/config.kdl`:
+
+```kdl
+binds {
+    Mod+Shift+M { spawn "hyprwave-toggle" "visibility"; }
+    Mod+M { spawn "hyprwave-toggle" "expand"; }
+}
+```
+
+Then reload: `niri msg action reload-config`
+
+#### Sway
+
+Add to `~/.config/sway/config`:
+
+```conf
+# HyprWave keybinds
+bindsym $mod+Shift+M exec hyprwave-toggle visibility
+bindsym $mod+M exec hyprwave-toggle expand
+```
+
+Then reload: `swaymsg reload`
+
+#### What the keybinds do:
+
+- **Toggle Visibility** (`Super+Shift+M`) - Smoothly hides/shows entire HyprWave with slide animation
+- **Toggle Expand** (`Super+M`) - Shows/hides album details
+  - If HyprWave is hidden, this will show it AND expand in one smooth motion
+
+
+#Example of how it looks (Recorded on Niri)-
+
+
+
+https://github.com/user-attachments/assets/0fab205d-6f19-4561-b86e-5096f409f5b8
+
+
+(The lag is because I am screen recording and running a bunch of other stuff, in reality the animations are much smoother.)
+
+
+### Layout Configuration
+
+Edit `~/.config/hyprwave/config.conf`:
+
+```conf
 [General]
 # Edge to anchor HyprWave to
 # Options: right, left, top, bottom
@@ -142,6 +164,11 @@ edge = right
 
 # Margin from the screen edge (in pixels)
 margin = 10
+
+[Keybinds]
+# Keybind labels (for display in setup message)
+toggle_visibility = Super+Shift+M
+toggle_expand = Super+M
 ```
 
 **Layout Options:**
@@ -150,122 +177,96 @@ margin = 10
 - **`edge = top`** - Horizontal layout on top edge
 - **`edge = bottom`** - Horizontal layout on bottom edge
 
-The UI automatically adapts:
-- **Vertical layouts** (left/right): Controls stack vertically, panel expands horizontally
-- **Horizontal layouts** (top/bottom): Controls arranged horizontally, panel expands vertically
+The UI automatically adapts to your chosen edge.
 
-### Icons
+### Auto-start
 
-Place your custom SVG icons in the `icons/` directory:
-- `play.svg` - Play button icon
-- `pause.svg` - Pause button icon
-- `next.svg` - Next track icon
-- `previous.svg` - Previous track icon
-- `arrow-left.svg` - Expand button (for vertical layouts)
-- `arrow-right.svg` - Collapse button (for vertical layouts)
-- `arrow-up.svg` - Expand button (for horizontal layouts)
-- `arrow-down.svg` - Collapse button (for horizontal layouts)
-
-### Styling
-
-Customize colors, sizes, and appearance by editing `style.css`. The design uses:
-- **Glassmorphic backgrounds** with transparency
-- **Gradient buttons** for visual hierarchy
-- **Smooth animations** on hover and click
-- **Rounded corners** for modern aesthetics
-
-### Auto-start with Hyprland
-
-Add to your `~/.config/hypr/hyprland.conf`:
+#### Hyprland
+Add to `~/.config/hypr/hyprland.conf`:
 ```conf
 exec-once = hyprwave
 ```
 
-### Auto-start with Niri
-
-Add to your `~/.config/niri/config.kdl`:
+#### Niri
+Add to `~/.config/niri/config.kdl`:
 ```kdl
 spawn-at-startup "hyprwave"
 ```
 
-## 🛠️ Technical Details
+## 🔧 Troubleshooting
 
-### Architecture
+### Black box around HyprWave (Hyprland)
+
+If you see a black box around HyprWave, disable blur for the overlay:
+
+Add to `hyprland.conf`:
+```conf
+layerrule = noblur, hyprwave
+```
+
+### Keybinds not working
+
+1. Verify `hyprwave-toggle` is installed: `which hyprwave-toggle`
+2. Test manually: `hyprwave-toggle visibility` (with HyprWave running)
+3. Check your compositor config for syntax errors
+4. Reload your compositor config after adding keybinds
+
+### Album art not loading
+
+HyprWave requires the music player to provide album art URLs via MPRIS. Desktop apps work better than web browsers for this.
+
+## 🛠️ Technical Details
 
 - **Language:** C
 - **GUI Framework:** GTK4
-- **Layer Shell:** gtk4-layer-shell (for Wayland overlay windows)
+- **Layer Shell:** gtk4-layer-shell (Wayland overlay)
 - **IPC:** D-Bus (MPRIS2 protocol)
-- **Memory Usage:** ~80-95MB
-- **CPU Usage:** <0.3% idle, <1% during updates
-
-### MPRIS Integration
-
-HyprWave communicates with media players via the MPRIS D-Bus interface:
-- Automatically detects active media players
-- Listens for metadata changes in real-time
-- Updates position/progress every second
-- Fetches album art from local files or HTTP URLs
+- **Memory:** ~80-95MB
+- **CPU:** <0.3% idle, <1% during updates
 
 ### File Paths
 
-HyprWave searches for resources in the following order:
+Resources are searched in this order:
+1. Local directory: `./icons/`, `./style.css` (for development)
+2. User install: `~/.local/share/hyprwave/`
+3. System install: `/usr/share/hyprwave/`
 
-1. **Local directory** (for development): `./icons/`, `./style.css`
-2. **User installation**: `~/.local/share/hyprwave/`
-3. **System installation**: `/usr/share/hyprwave/`
-
-Configuration file: `~/.config/hyprwave/config.conf`
+Config: `~/.config/hyprwave/config.conf`
 
 ## 🗺️ Roadmap
 
-### v0.2.0 (Completed)
-- [x] **Configuration file** - Flexible layout positioning
-- [x] **Multiple edge support** - Left, right, top, bottom anchoring
-- [x] **Adaptive UI** - Automatic layout switching
+### v0.3.0 (Current)
+- [x] Keybind support for visibility and expand
+- [x] Smooth slide animations
+- [x] Show+expand in one motion when hidden
 
-### v0.3.0 (Planned)
-- [ ] **Keybind toggle** - Show/hide with configurable keybind (e.g., Super+Shift+M)
-- [ ] **Slide-in animation** - Smooth reveal from screen edge
-- [ ] **Auto-hide** - Optional auto-hide when not in use
-- [ ] **Multiple players** - Switch between active media players
-
-### v0.4.0 (Future)
-- [ ] **Theming system** - Pre-built color themes
-- [ ] **Custom dimensions** - Configurable sizes for buttons and panels
+### v0.4.0 (Planned)
+- [ ] Multiple player switching
+- [ ] Volume control integration
+- [ ] Notification integration for track changes
 
 ### v1.0.0 (Goals)
-- [ ] **Full customization** - Position, size, colors, layout via config
-- [ ] **Plugin system** - Extend functionality
-- [ ] **Notification integration** - Show track changes
-- [ ] **Volume control** - Integrated volume slider
+- [ ] Theming system with pre-built themes
+- [ ] Custom dimensions and colors via config
+- [ ] Plugin system for extensibility
 
 ## 🤝 Contributing
 
-Contributions are welcome! Feel free to:
-- Report bugs via GitHub Issues
+Contributions welcome! Feel free to:
+- Report bugs via [GitHub Issues](https://github.com/shantanubaddar/hyprwave/issues)
 - Submit feature requests
 - Create pull requests
-- Improve documentation
 - Share your custom themes/icons
 
 ## 📝 License
 
-This project is open source. Feel free to use, modify, and distribute.
+Open source. Free to use, modify, and distribute.
 
 ## 🙏 Acknowledgments
 
 - Built with [GTK4](https://gtk.org/)
 - Uses [gtk4-layer-shell](https://github.com/wmww/gtk-layer-shell)
-- Inspired by [waybar](https://github.com/Alexays/Waybar) and modern music players
-- MPRIS specification by freedesktop.org
-
-## 💬 Support
-
-- **Issues:** [GitHub Issues](https://github.com/shantanubaddar/hyprwave/issues)
-
-## 💬 Support
-
-- **Issues:** [GitHub Issues](https://github.com/shantanubaddar/hyprwave/issues)
+- Inspired by [waybar](https://github.com/Alexays/Waybar)
+- MPRIS specification by [freedesktop.org](https://www.freedesktop.org/)hyprwave/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/shantanubaddar/hyprwave/discussions)
 
