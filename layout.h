@@ -17,6 +17,8 @@ typedef struct {
     gboolean is_vertical;
     gchar *toggle_visibility_bind;
     gchar *toggle_expand_bind;
+    gboolean notifications_enabled;
+    gboolean now_playing_enabled;
 } LayoutConfig;
 
 typedef struct {
