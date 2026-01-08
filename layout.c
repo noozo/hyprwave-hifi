@@ -33,7 +33,14 @@ LayoutConfig* layout_load_config(void) {
             "toggle_visibility = Super+Shift+M\n"
             "\n"
             "# Toggle expanded section (show/hide album details)\n"
-            "toggle_expand = Super+M\n";
+            "toggle_expand = Super+M\n"
+            "\n"
+            "[Notifications]\n"
+            "# Enable/disable notifications\n"
+            "enabled = true\n"
+            "\n"
+            "# Show notification when song changes\n"
+            "now_playing = true\n";
         
         g_file_set_contents(config_file, default_config, -1, NULL);
         g_print("Created default config at: %s\n", config_file);
@@ -47,6 +54,8 @@ LayoutConfig* layout_load_config(void) {
     config->margin = 10;
     config->toggle_visibility_bind = g_strdup("Super+Shift+M");
     config->toggle_expand_bind = g_strdup("Super+M");
+    config->notifications_enabled = TRUE;
+    config->now_playing_enabled = TRUE;
     
     if (g_key_file_load_from_file(keyfile, config_file, G_KEY_FILE_NONE, NULL)) {
         // Load General section
@@ -79,6 +88,23 @@ LayoutConfig* layout_load_config(void) {
         if (exp_bind) {
             g_free(config->toggle_expand_bind);
             config->toggle_expand_bind = exp_bind;
+        }
+        
+        // Load Notifications section (optional)
+        GError *error = NULL;
+        gboolean notif_enabled = g_key_file_get_boolean(keyfile, "Notifications", "enabled", &error);
+        if (!error) {
+            config->notifications_enabled = notif_enabled;
+        } else {
+            g_error_free(error);
+            error = NULL;
+        }
+        
+        gboolean now_playing = g_key_file_get_boolean(keyfile, "Notifications", "now_playing", &error);
+        if (!error) {
+            config->now_playing_enabled = now_playing;
+        } else {
+            g_error_free(error);
         }
     }
     
