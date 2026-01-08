@@ -107,23 +107,29 @@ The installer will:
 
 ### Roon Setup
 
-Roon requires an MPRIS bridge to work with HyprWave:
+Roon requires an MPRIS bridge to work with HyprWave. We recommend the multi-zone bridge which exposes all Roon zones as separate MPRIS players:
 
 ```bash
 # Arch Linux (AUR)
-yay -S roon-mpris-bridge-git
+yay -S roon-mpris-multizone-git
+```
 
-# Or via npm
-npm install -g github:brucejcooper/roon-mpris
+Or install from source:
+```bash
+git clone https://github.com/godlyfast/roon-mpris.git
+cd roon-mpris
+npm install
 ```
 
 Then:
-1. Run `roon-mpris-bridge` (add to autostart for persistence)
+1. Run `roon-mpris` (add to autostart for persistence)
 2. Open Roon → Settings → Extensions
-3. Enable "MPRIS Bridge" and select your zone
-4. HyprWave will now detect and control Roon
+3. Enable "Roon MPRIS Multi-Zone Bridge"
+4. HyprWave will auto-detect all your Roon zones
 
-**Note:** Volume control and zone switching require the Roon app directly.
+**Zone Switching:** Click the zone label in the expanded view to cycle through available zones. Your preference is saved automatically.
+
+**Note:** Volume control requires the Roon app directly.
 
 ## ⚙️ Configuration
 
