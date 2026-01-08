@@ -99,10 +99,31 @@ The installer will:
 ✅ **Fully Supported:**
 - Spotify (Desktop app)
 - VLC Media Player
+- Roon (via MPRIS bridge - see setup below)
 - Any MPRIS2-compatible player (Rhythmbox, Audacious, MPD with mpDris2, etc.)
 
 ⚠️ **Limited Support:**
 - Web browsers - Basic controls only, limited metadata
+
+### Roon Setup
+
+Roon requires an MPRIS bridge to work with HyprWave:
+
+```bash
+# Arch Linux (AUR)
+yay -S roon-mpris-bridge-git
+
+# Or via npm
+npm install -g github:brucejcooper/roon-mpris
+```
+
+Then:
+1. Run `roon-mpris-bridge` (add to autostart for persistence)
+2. Open Roon → Settings → Extensions
+3. Enable "MPRIS Bridge" and select your zone
+4. HyprWave will now detect and control Roon
+
+**Note:** Volume control and zone switching require the Roon app directly.
 
 ## ⚙️ Configuration
 
