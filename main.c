@@ -55,11 +55,55 @@ static AppState *global_state = NULL;
 
 // Check if a D-Bus name should be excluded from player list
 static gboolean is_excluded_player(const gchar *name) {
-    // Skip browsers (limited MPRIS support) and playerctld (proxy)
-    return g_strstr_len(name, -1, "chromium") != NULL ||
-           g_strstr_len(name, -1, "firefox") != NULL ||
-           g_strstr_len(name, -1, "brave") != NULL ||
-           g_strstr_len(name, -1, "playerctld") != NULL;
+    // Always exclude playerctld (proxy that duplicates other players)
+    if (g_strstr_len(name, -1, "playerctld") != NULL)
+        return TRUE;
+
+    // Allow known Electron music apps (check Identity for these)
+    // They register as chromium but have full MPRIS support
+    // We'll check their Identity property separately
+
+    // Exclude browsers (limited MPRIS support)
+    if (g_strstr_len(name, -1, "firefox") != NULL ||
+        g_strstr_len(name, -1, "brave") != NULL)
+        return TRUE;
+
+    // For chromium instances, we need to check Identity to distinguish
+    // browser tabs from Electron apps like tidal-hifi
+    // This is handled in is_allowed_chromium_player()
+    return FALSE;
+}
+
+// Check if a chromium-based player is actually a music app (not browser tab)
+static gboolean is_allowed_chromium_player(const gchar *bus_name) {
+    if (g_strstr_len(bus_name, -1, "chromium") == NULL)
+        return TRUE;  // Not chromium, allow
+
+    // Query Identity to check if it's a known music app
+    GDBusProxy *proxy = g_dbus_proxy_new_for_bus_sync(
+        G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
+        bus_name, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2",
+        NULL, NULL
+    );
+
+    if (!proxy) return FALSE;
+
+    GVariant *identity = g_dbus_proxy_get_cached_property(proxy, "Identity");
+    gboolean allowed = FALSE;
+
+    if (identity) {
+        const gchar *id = g_variant_get_string(identity, NULL);
+        // Allow known music apps that use Electron/Chromium
+        if (g_strstr_len(id, -1, "TIDAL") != NULL ||
+            g_strstr_len(id, -1, "tidal") != NULL ||
+            g_strstr_len(id, -1, "Cider") != NULL ||      // Apple Music client
+            g_strstr_len(id, -1, "YouTube Music") != NULL)
+            allowed = TRUE;
+        g_variant_unref(identity);
+    }
+
+    g_object_unref(proxy);
+    return allowed;
 }
 
 // Load all available MPRIS players from D-Bus
@@ -111,7 +155,8 @@ static void load_available_players(AppState *state) {
     // Find all MPRIS players (excluding browsers and playerctld)
     while (g_variant_iter_loop(iter, "&s", &name)) {
         if (g_str_has_prefix(name, "org.mpris.MediaPlayer2.") &&
-            !is_excluded_player(name)) {
+            !is_excluded_player(name) &&
+            is_allowed_chromium_player(name)) {
             g_ptr_array_add(player_arr, g_strdup(name));
         }
     }
@@ -705,7 +750,8 @@ static void find_active_player(AppState *state) {
     // Find MPRIS players
     while (g_variant_iter_loop(iter, "&s", &name)) {
         if (g_str_has_prefix(name, "org.mpris.MediaPlayer2.") &&
-            !is_excluded_player(name)) {
+            !is_excluded_player(name) &&
+            is_allowed_chromium_player(name)) {
             // Check for preferred player first
             if (preferred_player && g_strcmp0(name, preferred_player) == 0) {
                 connect_to_player(state, name);
@@ -788,21 +834,36 @@ static void on_expand_clicked(GtkButton *button, gpointer user_data) {
 
 static void load_css() {
     GtkCssProvider *provider = gtk_css_provider_new();
-    
+
     gchar *css_path = get_style_path();
     g_print("Attempting to load CSS from: %s\n", css_path);
-    
+
     gtk_css_provider_load_from_path(provider, css_path);
     g_print("CSS loaded successfully!\n");
-    
+
     free_path(css_path);
-    
+
     gtk_style_context_add_provider_for_display(
         gdk_display_get_default(),
         GTK_STYLE_PROVIDER(provider),
         GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
     );
     g_object_unref(provider);
+
+    // Load optional user CSS overrides with higher priority
+    gchar *user_css = g_build_filename(g_get_user_config_dir(), "hyprwave", "user.css", NULL);
+    if (g_file_test(user_css, G_FILE_TEST_EXISTS)) {
+        GtkCssProvider *user_provider = gtk_css_provider_new();
+        gtk_css_provider_load_from_path(user_provider, user_css);
+        gtk_style_context_add_provider_for_display(
+            gdk_display_get_default(),
+            GTK_STYLE_PROVIDER(user_provider),
+            GTK_STYLE_PROVIDER_PRIORITY_USER
+        );
+        g_object_unref(user_provider);
+        g_print("User CSS loaded from: %s\n", user_css);
+    }
+    g_free(user_css);
 }
 
 static void activate(GtkApplication *app, gpointer user_data) {
