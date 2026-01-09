@@ -278,6 +278,12 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
         NULL
     );
 
+    // Set fallback display name from bus_name (e.g., "org.mpris.MediaPlayer2.spotify" -> "spotify")
+    g_free(state->player_display_name);
+    const gchar *fallback_name = strrchr(bus_name, '.');
+    state->player_display_name = g_strdup(fallback_name ? fallback_name + 1 : "Unknown");
+
+    // Try to get better display name from Identity property
     if (player_proxy) {
         GVariant *identity = g_dbus_proxy_get_cached_property(player_proxy, "Identity");
         if (identity) {
@@ -290,13 +296,12 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
     }
 
     // Update display and save preference
-    if (state->player_label && state->player_display_name) {
+    if (state->player_label) {
         gtk_label_set_text(GTK_LABEL(state->player_label), state->player_display_name);
     }
     save_preferred_player(bus_name);
 
-    const gchar *display_name = state->player_display_name ? state->player_display_name : "Unknown player";
-    g_print("Switched to player: %s (%s)\n", display_name, bus_name);
+    g_print("Switched to player: %s (%s)\n", state->player_display_name, bus_name);
 
     // Update metadata and playback status
     update_metadata(state);
@@ -593,7 +598,7 @@ static void update_metadata(AppState *state) {
 
             // Pre-load notification album art NOW before temp file gets deleted
             // (Chromium uses ephemeral temp files that disappear quickly)
-            if (state->notification && state->notification->album_cover) {
+            if (state->notification->album_cover) {
                 // Clear old art first, then try to load new art
                 clear_album_art_container(state->notification->album_cover);
                 load_album_art_to_container(art_url, state->notification->album_cover, 70);
@@ -883,18 +888,32 @@ static void on_expand_clicked(GtkButton *button, gpointer user_data) {
 
 static void load_css() {
     // 1. Load base styles (style.css)
-    GtkCssProvider *provider = gtk_css_provider_new();
     gchar *css_path = get_style_path();
     g_print("Loading base CSS from: %s\n", css_path);
-    gtk_css_provider_load_from_path(provider, css_path);
-    free_path(css_path);
 
-    gtk_style_context_add_provider_for_display(
-        gdk_display_get_default(),
-        GTK_STYLE_PROVIDER(provider),
-        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
-    );
+    GtkCssProvider *provider = gtk_css_provider_new();
+    GFile *base_file = g_file_new_for_path(css_path);
+    GError *base_error = NULL;
+    gchar *base_contents = NULL;
+    gsize base_length = 0;
+
+    if (g_file_load_contents(base_file, NULL, &base_contents, &base_length, NULL, &base_error)) {
+        gtk_css_provider_load_from_string(provider, base_contents);
+        gtk_style_context_add_provider_for_display(
+            gdk_display_get_default(),
+            GTK_STYLE_PROVIDER(provider),
+            GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
+        );
+        g_print("Base CSS loaded successfully\n");
+        g_free(base_contents);
+    } else {
+        g_warning("Failed to load base CSS from '%s': %s",
+                  css_path, base_error ? base_error->message : "Unknown error");
+        if (base_error) g_error_free(base_error);
+    }
+    g_object_unref(base_file);
     g_object_unref(provider);
+    free_path(css_path);
 
     // 2. Load theme CSS if not using default "light" theme
     gchar *theme = get_config_theme();
@@ -903,14 +922,27 @@ static void load_css() {
     gchar *theme_path = get_theme_path(theme);
     if (theme_path) {
         GtkCssProvider *theme_provider = gtk_css_provider_new();
-        gtk_css_provider_load_from_path(theme_provider, theme_path);
-        gtk_style_context_add_provider_for_display(
-            gdk_display_get_default(),
-            GTK_STYLE_PROVIDER(theme_provider),
-            GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1
-        );
+        GFile *theme_file = g_file_new_for_path(theme_path);
+        GError *theme_error = NULL;
+        gchar *theme_contents = NULL;
+        gsize theme_length = 0;
+
+        if (g_file_load_contents(theme_file, NULL, &theme_contents, &theme_length, NULL, &theme_error)) {
+            gtk_css_provider_load_from_string(theme_provider, theme_contents);
+            gtk_style_context_add_provider_for_display(
+                gdk_display_get_default(),
+                GTK_STYLE_PROVIDER(theme_provider),
+                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1
+            );
+            g_print("Theme CSS loaded: %s\n", theme_path);
+            g_free(theme_contents);
+        } else {
+            g_warning("Failed to load theme CSS from '%s': %s",
+                      theme_path, theme_error ? theme_error->message : "Unknown error");
+            if (theme_error) g_error_free(theme_error);
+        }
+        g_object_unref(theme_file);
         g_object_unref(theme_provider);
-        g_print("Theme CSS loaded: %s\n", theme_path);
         free_path(theme_path);
     }
     g_free(theme);
