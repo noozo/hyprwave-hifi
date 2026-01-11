@@ -1,4 +1,4 @@
-# 🌊 HyprWave - v0.4 (latest release)
+# 🌊 HyprWave - v0.5 (latest release)
 
 A sleek, modern music control bar for Wayland compositors (Hyprland, Niri, Sway, etc.) with MPRIS integration.
 
