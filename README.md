@@ -1,5 +1,9 @@
 # HyprWave Hi-Fi Edition
 
+[![AUR version](https://img.shields.io/aur/version/hyprwave-hifi?label=AUR%20hyprwave-hifi)](https://aur.archlinux.org/packages/hyprwave-hifi)
+[![AUR version](https://img.shields.io/aur/version/hyprwave-hifi-git?label=AUR%20hyprwave-hifi-git)](https://aur.archlinux.org/packages/hyprwave-hifi-git)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A sleek, modern music control bar for Wayland compositors, **focused on hi-res playback services** like Roon, Tidal, Qobuz, and HQPlayer.
 
 > **Fork Notice:** This is an enhanced fork of [shantanubaddar/hyprwave](https://github.com/shantanubaddar/hyprwave). The original project focuses on being a simple, sleek music controller. This fork extends it with features tailored for audiophile setups and multi-zone streaming.
