@@ -216,12 +216,13 @@ GtkWidget* layout_create_expanded_section(LayoutConfig *config, ExpandedWidgets 
 
         gtk_box_append(GTK_BOX(expanded_section), widgets->album_cover);
         gtk_box_append(GTK_BOX(expanded_section), widgets->source_label);
+        gtk_box_append(GTK_BOX(expanded_section), widgets->format_label);
         gtk_box_append(GTK_BOX(expanded_section), widgets->player_label);
         gtk_box_append(GTK_BOX(expanded_section), widgets->track_title);
         gtk_box_append(GTK_BOX(expanded_section), widgets->artist_label);
         gtk_box_append(GTK_BOX(expanded_section), widgets->progress_bar);
         gtk_box_append(GTK_BOX(expanded_section), widgets->time_remaining);
-        
+
     } else {
         // Horizontal layout: album on left, info on right
         expanded_section = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
@@ -234,6 +235,7 @@ GtkWidget* layout_create_expanded_section(LayoutConfig *config, ExpandedWidgets 
         gtk_widget_set_valign(info_panel, GTK_ALIGN_CENTER);
         
         gtk_label_set_xalign(GTK_LABEL(widgets->source_label), 0.0);
+        gtk_label_set_xalign(GTK_LABEL(widgets->format_label), 0.0);
         gtk_label_set_xalign(GTK_LABEL(widgets->player_label), 0.0);
         gtk_label_set_xalign(GTK_LABEL(widgets->track_title), 0.0);
         gtk_label_set_xalign(GTK_LABEL(widgets->artist_label), 0.0);
@@ -242,9 +244,10 @@ GtkWidget* layout_create_expanded_section(LayoutConfig *config, ExpandedWidgets 
         // Increase max width for horizontal layout
         gtk_label_set_max_width_chars(GTK_LABEL(widgets->track_title), 25);
         gtk_label_set_max_width_chars(GTK_LABEL(widgets->artist_label), 25);
-        gtk_widget_set_size_request(widgets->progress_bar, 180, 4);
+        gtk_widget_set_size_request(widgets->progress_bar, 180, 16);  // Taller for easier clicking
 
         gtk_box_append(GTK_BOX(info_panel), widgets->source_label);
+        gtk_box_append(GTK_BOX(info_panel), widgets->format_label);
         gtk_box_append(GTK_BOX(info_panel), widgets->player_label);
         gtk_box_append(GTK_BOX(info_panel), widgets->track_title);
         gtk_box_append(GTK_BOX(info_panel), widgets->artist_label);

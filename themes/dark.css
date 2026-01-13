@@ -99,3 +99,25 @@
 .control-button:hover {
     box-shadow: 0 6px 16px var(--shadow-button), inset 0 1px 1px rgba(255, 255, 255, 0.12);
 }
+
+/* Playing animation - subtle breathing with cyan glow for dark theme */
+@keyframes playing-breathe-dark {
+    0%, 100% {
+        transform: scale(1.0);
+        box-shadow:
+            0 4px 16px var(--shadow-play),
+            0 0 0 0 rgba(80, 200, 255, 0),
+            inset 0 1px 1px rgba(255, 255, 255, 0.1);
+    }
+    50% {
+        transform: scale(1.02);
+        box-shadow:
+            0 5px 18px var(--shadow-play-hover),
+            0 0 12px 1px rgba(80, 200, 255, 0.2),
+            inset 0 1px 1px rgba(255, 255, 255, 0.1);
+    }
+}
+
+.play-button.playing {
+    animation: playing-breathe-dark 4s ease-in-out infinite;
+}

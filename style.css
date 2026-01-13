@@ -188,6 +188,14 @@ revealer > * {
     letter-spacing: 0.5px;
 }
 
+/* Format/bitrate label (e.g., "1411 kbps") */
+.format-label {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 400;
+    margin-top: 2px;
+}
+
 /* Player label (clickable to cycle players) */
 .player-label {
     color: var(--text-secondary);
@@ -229,11 +237,11 @@ revealer > * {
 }
 
 /* ========================================
-   Progress Bar
+   Progress/Seek Slider (GtkScale)
    ======================================== */
 
 .track-progress {
-    min-height: 4px;
+    min-height: 16px;
     margin-top: 8px;
     margin-bottom: 4px;
 }
@@ -241,13 +249,35 @@ revealer > * {
 .track-progress trough {
     background: var(--progress-bg);
     border-radius: var(--border-radius-progress);
-    min-height: 4px;
+    min-height: 6px;
 }
 
-.track-progress progress {
+/* GtkScale uses 'highlight' for filled portion */
+.track-progress highlight {
     background: linear-gradient(90deg, var(--progress-fill-start), var(--progress-fill-end));
     border-radius: var(--border-radius-progress);
-    min-height: 4px;
+    min-height: 6px;
+}
+
+/* Slider thumb/handle */
+.track-progress slider {
+    background: linear-gradient(135deg, var(--btn-play), var(--btn-play-secondary));
+    border: 1px solid var(--border-play);
+    border-radius: 50%;
+    min-width: 14px;
+    min-height: 14px;
+    margin: -4px;
+    box-shadow: 0 2px 4px var(--shadow-button);
+}
+
+.track-progress slider:hover {
+    background: linear-gradient(135deg, var(--btn-play-hover), var(--btn-play-hover-secondary));
+    border-color: var(--border-play-hover);
+    box-shadow: 0 3px 6px var(--shadow-play-hover);
+}
+
+.track-progress slider:active {
+    background: linear-gradient(135deg, var(--btn-play-active), var(--btn-play-active-secondary));
 }
 
 /* ========================================
@@ -311,9 +341,31 @@ revealer > * {
 
 .play-button:active {
     background: linear-gradient(135deg, var(--btn-play-active), var(--btn-play-active-secondary));
-    box-shadow: 
+    box-shadow:
         0 2px 10px var(--shadow-play),
         inset 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* Playing state animation - subtle breathing with soft glow */
+@keyframes playing-breathe {
+    0%, 100% {
+        transform: scale(1.0);
+        box-shadow:
+            0 4px 16px var(--shadow-play),
+            0 0 0 0 rgba(100, 180, 255, 0),
+            inset 0 1px 1px rgba(255, 255, 255, 0.3);
+    }
+    50% {
+        transform: scale(1.02);
+        box-shadow:
+            0 5px 18px var(--shadow-play-hover),
+            0 0 10px 1px rgba(100, 180, 255, 0.15),
+            inset 0 1px 1px rgba(255, 255, 255, 0.3);
+    }
+}
+
+.play-button.playing {
+    animation: playing-breathe 4s ease-in-out infinite;
 }
 
 /* ========================================

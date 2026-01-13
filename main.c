@@ -15,24 +15,30 @@ typedef struct {
     GtkWidget *window;
     GtkWidget *window_revealer;
     GtkWidget *revealer;
+    GtkWidget *play_button;      // Play button (for animation class)
     GtkWidget *play_icon;
     GtkWidget *expand_icon;
     GtkWidget *album_cover;
     GtkWidget *source_label;
+    GtkWidget *format_label;     // Bitrate/format display
     GtkWidget *track_title;
     GtkWidget *artist_label;
     GtkWidget *time_remaining;
-    GtkWidget *progress_bar;
+    GtkWidget *progress_bar;     // Now a GtkScale for seek support
     GtkWidget *player_label;     // Player selector display
     gboolean is_playing;
     gboolean is_expanded;
     gboolean is_visible;
+    gboolean is_seeking;         // True while user is dragging seek slider
+    gboolean can_seek;           // True if current player supports seeking
     GDBusProxy *mpris_proxy;
     gchar *current_player;       // D-Bus name of current player
     guint update_timer;
     LayoutConfig *layout;
     NotificationState *notification;
     gchar *last_track_id;
+    gchar *current_track_id;     // For seek operations
+    gint64 current_length;       // Track length in microseconds
     // Player switching
     gchar **players;             // Array of MPRIS player D-Bus names
     gint player_count;
@@ -48,6 +54,7 @@ typedef struct {
 static void update_position(AppState *state);
 static void update_metadata(AppState *state);
 static void update_playback_status(AppState *state);
+static gint64 get_variant_as_int64(GVariant *value);
 static void on_expand_clicked(GtkButton *button, gpointer user_data);
 static void on_properties_changed(GDBusProxy *proxy, GVariant *changed_properties,
                                   GStrv invalidated_properties, gpointer user_data);
@@ -297,6 +304,14 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
         g_object_unref(player_proxy);
     }
 
+    // Check if player supports seeking
+    state->can_seek = FALSE;
+    GVariant *can_seek_var = g_dbus_proxy_get_cached_property(state->mpris_proxy, "CanSeek");
+    if (can_seek_var) {
+        state->can_seek = g_variant_get_boolean(can_seek_var);
+        g_variant_unref(can_seek_var);
+    }
+
     // Update display and save preference
     if (state->player_label) {
         gtk_label_set_text(GTK_LABEL(state->player_label), state->player_display_name);
@@ -334,6 +349,98 @@ static void cycle_player(AppState *state, gboolean forward) {
 static void on_player_clicked(GtkGestureClick *gesture, gint n_press, gdouble x, gdouble y, gpointer user_data) {
     AppState *state = (AppState *)user_data;
     cycle_player(state, TRUE);
+}
+
+// ========================================
+// SEEK FUNCTIONALITY
+// ========================================
+
+// Perform the actual MPRIS seek call
+static void perform_seek(AppState *state, gdouble fraction) {
+    if (!state->mpris_proxy || state->current_length <= 0)
+        return;
+
+    gint64 target_position = (gint64)(fraction * state->current_length);
+
+    if (state->current_track_id && strlen(state->current_track_id) > 0) {
+        // Use SetPosition with track ID if available
+        g_dbus_proxy_call(state->mpris_proxy, "SetPosition",
+            g_variant_new("(ox)", state->current_track_id, target_position),
+            G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+    } else {
+        // Fallback: Use relative Seek method
+        // First get current position to calculate offset
+        GError *error = NULL;
+        GVariant *pos_result = g_dbus_proxy_call_sync(
+            state->mpris_proxy,
+            "org.freedesktop.DBus.Properties.Get",
+            g_variant_new("(ss)", "org.mpris.MediaPlayer2.Player", "Position"),
+            G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error
+        );
+
+        if (pos_result && !error) {
+            GVariant *pos_wrapped;
+            g_variant_get(pos_result, "(v)", &pos_wrapped);
+            gint64 current_position = get_variant_as_int64(pos_wrapped);
+            g_variant_unref(pos_wrapped);
+            g_variant_unref(pos_result);
+
+            // Calculate offset and use Seek method
+            gint64 offset = target_position - current_position;
+            g_dbus_proxy_call(state->mpris_proxy, "Seek",
+                g_variant_new("(x)", offset),
+                G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+        }
+        if (error) g_error_free(error);
+    }
+}
+
+// Debounce timer for seek - waits for user to stop interacting before seeking
+static guint seek_debounce_timer = 0;
+
+// Called after debounce delay to perform the actual seek
+static gboolean perform_seek_debounced(gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    seek_debounce_timer = 0;
+
+    gdouble fraction = gtk_range_get_value(GTK_RANGE(state->progress_bar));
+    perform_seek(state, fraction);
+    state->is_seeking = FALSE;
+
+    return G_SOURCE_REMOVE;
+}
+
+// Called when slider value changes (during drag or click)
+static void on_seek_value_changed(GtkRange *range, gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+
+    // If seeking not supported, ignore user input (slider will update from position)
+    if (!state->can_seek) return;
+
+    // Mark that user is interacting with the slider
+    state->is_seeking = TRUE;
+
+    // Update time display preview
+    gdouble fraction = gtk_range_get_value(range);
+    if (state->current_length > 0) {
+        gint64 len_seconds = state->current_length / 1000000;
+        gint64 pos_seconds = (gint64)(fraction * len_seconds);
+        gint64 rem_seconds = len_seconds - pos_seconds;
+        if (rem_seconds < 0) rem_seconds = 0;
+        int mins = rem_seconds / 60;
+        int secs = rem_seconds % 60;
+        char time_str[32];
+        snprintf(time_str, sizeof(time_str), "-%d:%02d", mins, secs);
+        gtk_label_set_text(GTK_LABEL(state->time_remaining), time_str);
+    }
+
+    // Cancel previous debounce timer
+    if (seek_debounce_timer > 0) {
+        g_source_remove(seek_debounce_timer);
+    }
+
+    // Schedule seek after 150ms of no changes
+    seek_debounce_timer = g_timeout_add(150, perform_seek_debounced, state);
 }
 
 // ========================================
@@ -413,7 +520,10 @@ static gboolean update_position_tick(gpointer user_data) {
 
 static void update_position(AppState *state) {
     if (!state->mpris_proxy) return;
-    
+
+    // Don't update position while user is seeking
+    if (state->is_seeking) return;
+
     GError *error = NULL;
     GVariant *position_container = g_dbus_proxy_call_sync(
         state->mpris_proxy,
@@ -422,34 +532,36 @@ static void update_position(AppState *state) {
         G_DBUS_CALL_FLAGS_NONE,
         -1, NULL, &error
     );
-    
+
     if (error) {
         g_error_free(error);
         return;
     }
-    
+
     GVariant *position_val_wrapped;
     g_variant_get(position_container, "(v)", &position_val_wrapped);
     gint64 position = get_variant_as_int64(position_val_wrapped);
     g_variant_unref(position_val_wrapped);
     g_variant_unref(position_container);
-    
-    gint64 length = 0;
-    GVariant *metadata_var = g_dbus_proxy_get_cached_property(state->mpris_proxy, "Metadata");
-    
-    if (metadata_var) {
-        GVariantIter iter;
-        gchar *key;
-        GVariant *val;
-        
-        g_variant_iter_init(&iter, metadata_var);
-        while (g_variant_iter_loop(&iter, "{sv}", &key, &val)) {
-            if (g_strcmp0(key, "mpris:length") == 0) {
-                length = get_variant_as_int64(val);
-                break;
+
+    gint64 length = state->current_length;
+    if (length <= 0) {
+        // Fallback: try to get length from metadata if not cached
+        GVariant *metadata_var = g_dbus_proxy_get_cached_property(state->mpris_proxy, "Metadata");
+        if (metadata_var) {
+            GVariantIter iter;
+            gchar *key;
+            GVariant *val;
+            g_variant_iter_init(&iter, metadata_var);
+            while (g_variant_iter_loop(&iter, "{sv}", &key, &val)) {
+                if (g_strcmp0(key, "mpris:length") == 0) {
+                    length = get_variant_as_int64(val);
+                    state->current_length = length;
+                    break;
+                }
             }
+            g_variant_unref(metadata_var);
         }
-        g_variant_unref(metadata_var);
     }
 
     char time_str[32];
@@ -475,7 +587,7 @@ static void update_position(AppState *state) {
     if (fraction < 0.0) fraction = 0.0;
 
     gtk_label_set_text(GTK_LABEL(state->time_remaining), time_str);
-    gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(state->progress_bar), fraction);
+    gtk_range_set_value(GTK_RANGE(state->progress_bar), fraction);
 }
 
 // Track notification retry count
@@ -535,6 +647,8 @@ static void update_metadata(AppState *state) {
     gchar *artist = NULL;
     gchar *art_url = NULL;
     gchar *track_id = NULL;
+    gint64 length = 0;
+    gint64 bitrate = 0;
 
     g_variant_iter_init(&iter, metadata);
     while (g_variant_iter_loop(&iter, "{sv}", &key, &value)) {
@@ -544,9 +658,9 @@ static void update_metadata(AppState *state) {
         }
         else if (g_strcmp0(key, "xesam:artist") == 0) {
             if (g_variant_is_of_type(value, G_VARIANT_TYPE_STRING_ARRAY)) {
-                gsize length;
-                const gchar **artists = g_variant_get_strv(value, &length);
-                if (length > 0) {
+                gsize arr_length;
+                const gchar **artists = g_variant_get_strv(value, &arr_length);
+                if (arr_length > 0) {
                     g_free(artist);
                     artist = g_strdup(artists[0]);
                 }
@@ -561,7 +675,20 @@ static void update_metadata(AppState *state) {
             g_free(track_id);
             track_id = g_strdup(g_variant_get_string(value, NULL));
         }
+        else if (g_strcmp0(key, "mpris:length") == 0) {
+            length = get_variant_as_int64(value);
+        }
+        else if (g_strcmp0(key, "xesam:audioBitrate") == 0) {
+            bitrate = get_variant_as_int64(value);
+        }
     }
+
+    // Store track info for seek operations
+    if (track_id) {
+        g_free(state->current_track_id);
+        state->current_track_id = g_strdup(track_id);
+    }
+    state->current_length = length;
     
     // Check if track changed for notification
     gboolean track_changed = FALSE;
@@ -666,6 +793,21 @@ static void update_metadata(AppState *state) {
         }
     }
 
+    // Update format/bitrate label
+    if (state->format_label) {
+        if (bitrate > 0) {
+            // Bitrate is in bps, convert to kbps for display
+            gint kbps = (gint)(bitrate / 1000);
+            gchar *format_str = g_strdup_printf("%d kbps", kbps);
+            gtk_label_set_text(GTK_LABEL(state->format_label), format_str);
+            g_free(format_str);
+            gtk_widget_set_visible(state->format_label, TRUE);
+        } else {
+            // No bitrate info available - hide the label
+            gtk_widget_set_visible(state->format_label, FALSE);
+        }
+    }
+
     // Cleanup allocated strings
     g_free(title);
     g_free(artist);
@@ -689,10 +831,18 @@ static void update_playback_status(AppState *state) {
             gchar *icon_path = get_icon_path("pause.svg");
             gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
             free_path(icon_path);
+            // Add playing animation
+            if (state->play_button) {
+                gtk_widget_add_css_class(state->play_button, "playing");
+            }
         } else {
             gchar *icon_path = get_icon_path("play.svg");
             gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
             free_path(icon_path);
+            // Remove playing animation
+            if (state->play_button) {
+                gtk_widget_remove_css_class(state->play_button, "playing");
+            }
         }
         g_variant_unref(status_var);
     }
@@ -760,7 +910,16 @@ static void connect_to_player(AppState *state, const gchar *bus_name) {
         g_object_unref(player_proxy);
     }
 
+    // Check if player supports seeking
+    state->can_seek = FALSE;
+    GVariant *can_seek_var = g_dbus_proxy_get_cached_property(state->mpris_proxy, "CanSeek");
+    if (can_seek_var) {
+        state->can_seek = g_variant_get_boolean(can_seek_var);
+        g_variant_unref(can_seek_var);
+    }
+
     update_metadata(state);
+    update_playback_status(state);
     g_print("Connected to player: %s\n", bus_name);
 }
 
@@ -1031,6 +1190,12 @@ static void activate(GtkApplication *app, gpointer user_data) {
     state->source_label = source_label;
     gtk_widget_add_css_class(source_label, "source-label");
 
+    // Format/bitrate label (shown when available)
+    GtkWidget *format_label = gtk_label_new("");
+    state->format_label = format_label;
+    gtk_widget_add_css_class(format_label, "format-label");
+    gtk_widget_set_visible(format_label, FALSE);  // Hidden until bitrate is available
+
     // Player label (clickable to cycle players)
     GtkWidget *player_label = gtk_label_new("No Player");
     state->player_label = player_label;
@@ -1048,16 +1213,21 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_label_set_ellipsize(GTK_LABEL(artist_label), PANGO_ELLIPSIZE_END);
     gtk_label_set_max_width_chars(GTK_LABEL(artist_label), 20);
     
-    GtkWidget *progress_bar = gtk_progress_bar_new();
+    // Progress bar is now a GtkScale for seek support
+    GtkWidget *progress_bar = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 1.0, 0.001);
     state->progress_bar = progress_bar;
     gtk_widget_add_css_class(progress_bar, "track-progress");
-    gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(progress_bar), 0.0);
-    gtk_widget_set_size_request(progress_bar, 140, 4);
-    
+    gtk_scale_set_draw_value(GTK_SCALE(progress_bar), FALSE);  // Hide numeric value
+    gtk_range_set_value(GTK_RANGE(progress_bar), 0.0);
+    gtk_widget_set_size_request(progress_bar, 140, 16);  // Taller for easier clicking
+
+    // Connect seek signal - uses debounce to perform seek after user stops interacting
+    g_signal_connect(progress_bar, "value-changed", G_CALLBACK(on_seek_value_changed), state);
+
     GtkWidget *time_remaining = gtk_label_new("--:--");
     state->time_remaining = time_remaining;
     gtk_widget_add_css_class(time_remaining, "time-remaining");
-    
+
     // Create expanded section using layout module
     // Add click gesture to player label for cycling players
     GtkGesture *player_click = gtk_gesture_click_new();
@@ -1068,6 +1238,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     ExpandedWidgets expanded_widgets = {
         .album_cover = album_cover,
         .source_label = source_label,
+        .format_label = format_label,
         .player_label = player_label,
         .track_title = track_title,
         .artist_label = artist_label,
@@ -1101,6 +1272,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     
     // Play button
     GtkWidget *play_btn = gtk_button_new();
+    state->play_button = play_btn;
     gtk_widget_set_size_request(play_btn, 44, 44);
     gchar *play_icon_path = get_icon_path("play.svg");
     GtkWidget *play_icon = gtk_image_new_from_file(play_icon_path);
