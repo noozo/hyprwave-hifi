@@ -37,6 +37,7 @@ typedef struct {
     LayoutConfig *layout;
     NotificationState *notification;
     gchar *last_track_id;
+    gchar *last_title;           // Fallback for track change detection
     gchar *current_track_id;     // For seek operations
     gint64 current_length;       // Track length in microseconds
     // Player switching
@@ -51,6 +52,8 @@ typedef struct {
     gchar *pending_art_url;
     // Signal handler ID for blocking during programmatic updates
     gulong seek_handler_id;
+    // Suppress notification during player switch
+    gboolean suppress_notification;
 } AppState;
 
 static void update_position(AppState *state);
@@ -336,9 +339,11 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
 
     g_print("Switched to player: %s (%s)\n", state->player_display_name, bus_name);
 
-    // Update metadata and playback status
+    // Suppress notification during player switch
+    state->suppress_notification = TRUE;
     update_metadata(state);
     update_playback_status(state);
+    state->suppress_notification = FALSE;
 }
 
 static void cycle_player(AppState *state, gboolean forward) {
@@ -643,7 +648,6 @@ static gboolean show_pending_notification(gpointer user_data) {
             state->notification_timer = g_timeout_add(200, show_pending_notification, state);
             return G_SOURCE_REMOVE;
         }
-        g_print("Notification skipped - metadata incomplete after retries\n");
     } else {
         // We have complete data - show notification
         notification_show(state->notification,
@@ -725,23 +729,34 @@ static void update_metadata(AppState *state) {
     state->current_length = length;
     
     // Check if track changed for notification
+    // Use track_id OR title change (fallback for buggy MPRIS bridges like roon-mpris)
     gboolean track_changed = FALSE;
     if (track_id && state->last_track_id) {
         track_changed = (g_strcmp0(track_id, state->last_track_id) != 0);
     } else if (track_id && !state->last_track_id) {
         track_changed = TRUE;
     }
-    
-    // Update last track ID
+
+    // Fallback: also check title change if track_id stayed same
+    // (workaround for MPRIS bridges that don't update track_id properly)
+    if (!track_changed && title && state->last_title) {
+        track_changed = (g_strcmp0(title, state->last_title) != 0);
+    }
+
+    // Update last track ID and title
     if (track_id) {
         g_free(state->last_track_id);
         state->last_track_id = g_strdup(track_id);
+    }
+    if (title) {
+        g_free(state->last_title);
+        state->last_title = g_strdup(title);
     }
     // Handle notification with debounce
     if (state->layout->notifications_enabled &&
         state->layout->now_playing_enabled && state->notification) {
 
-        if (track_changed) {
+        if (track_changed && !state->suppress_notification) {
             // New track - cancel any pending notification and schedule new one
             if (state->notification_timer > 0) {
                 g_source_remove(state->notification_timer);
@@ -1014,8 +1029,11 @@ static void connect_to_player(AppState *state, const gchar *bus_name) {
     }
     g_print("CanSeek: %s\n", state->can_seek ? "true" : "false");
 
+    // Suppress notification on initial connection
+    state->suppress_notification = TRUE;
     update_metadata(state);
     update_playback_status(state);
+    state->suppress_notification = FALSE;
     g_print("Connected to player: %s\n", bus_name);
 }
 
@@ -1239,9 +1257,11 @@ static void activate(GtkApplication *app, gpointer user_data) {
     state->is_playing = FALSE;
     state->is_expanded = FALSE;
     state->is_visible = TRUE;
+    state->suppress_notification = FALSE;
     state->mpris_proxy = NULL;
     state->current_player = NULL;
     state->last_track_id = NULL;
+    state->last_title = NULL;
     state->layout = layout_load_config();
     
     // Initialize notification system
