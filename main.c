@@ -49,6 +49,8 @@ typedef struct {
     gchar *pending_title;
     gchar *pending_artist;
     gchar *pending_art_url;
+    // Signal handler ID for blocking during programmatic updates
+    gulong seek_handler_id;
 } AppState;
 
 static void update_position(AppState *state);
@@ -304,12 +306,26 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
         g_object_unref(player_proxy);
     }
 
-    // Check if player supports seeking
+    // Check if player supports seeking (explicit fetch)
     state->can_seek = FALSE;
-    GVariant *can_seek_var = g_dbus_proxy_get_cached_property(state->mpris_proxy, "CanSeek");
-    if (can_seek_var) {
-        state->can_seek = g_variant_get_boolean(can_seek_var);
-        g_variant_unref(can_seek_var);
+    GError *seek_err = NULL;
+    GVariant *seek_res = g_dbus_proxy_call_sync(
+        state->mpris_proxy,
+        "org.freedesktop.DBus.Properties.Get",
+        g_variant_new("(ss)", "org.mpris.MediaPlayer2.Player", "CanSeek"),
+        G_DBUS_CALL_FLAGS_NONE,
+        -1, NULL, &seek_err
+    );
+    if (seek_res) {
+        GVariant *val = NULL;
+        g_variant_get(seek_res, "(v)", &val);
+        if (val) {
+            state->can_seek = g_variant_get_boolean(val);
+            g_variant_unref(val);
+        }
+        g_variant_unref(seek_res);
+    } else if (seek_err) {
+        g_error_free(seek_err);
     }
 
     // Update display and save preference
@@ -398,6 +414,13 @@ static void perform_seek(AppState *state, gdouble fraction) {
 // Debounce timer for seek - waits for user to stop interacting before seeking
 static guint seek_debounce_timer = 0;
 
+// Called after seek delay to allow position updates again
+static gboolean seek_cooldown_complete(gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    state->is_seeking = FALSE;
+    return G_SOURCE_REMOVE;
+}
+
 // Called after debounce delay to perform the actual seek
 static gboolean perform_seek_debounced(gpointer user_data) {
     AppState *state = (AppState *)user_data;
@@ -405,7 +428,10 @@ static gboolean perform_seek_debounced(gpointer user_data) {
 
     gdouble fraction = gtk_range_get_value(GTK_RANGE(state->progress_bar));
     perform_seek(state, fraction);
-    state->is_seeking = FALSE;
+
+    // Keep is_seeking TRUE for a bit longer to let the player update its position
+    // This prevents the slider from jumping back to the old position
+    g_timeout_add(500, seek_cooldown_complete, state);
 
     return G_SOURCE_REMOVE;
 }
@@ -414,7 +440,7 @@ static gboolean perform_seek_debounced(gpointer user_data) {
 static void on_seek_value_changed(GtkRange *range, gpointer user_data) {
     AppState *state = (AppState *)user_data;
 
-    // If seeking not supported, ignore user input (slider will update from position)
+    // If seeking not supported, ignore
     if (!state->can_seek) return;
 
     // Mark that user is interacting with the slider
@@ -587,7 +613,15 @@ static void update_position(AppState *state) {
     if (fraction < 0.0) fraction = 0.0;
 
     gtk_label_set_text(GTK_LABEL(state->time_remaining), time_str);
+
+    // Block signal handler to prevent triggering seek during programmatic update
+    if (state->seek_handler_id > 0) {
+        g_signal_handler_block(state->progress_bar, state->seek_handler_id);
+    }
     gtk_range_set_value(GTK_RANGE(state->progress_bar), fraction);
+    if (state->seek_handler_id > 0) {
+        g_signal_handler_unblock(state->progress_bar, state->seek_handler_id);
+    }
 }
 
 // Track notification retry count
@@ -848,11 +882,58 @@ static void update_playback_status(AppState *state) {
     }
 }
 
+static gboolean refresh_playback_status(gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    if (!state->mpris_proxy) return G_SOURCE_REMOVE;
+
+    // Force fetch PlaybackStatus via D-Bus call (bypass cache)
+    GError *error = NULL;
+    GVariant *result = g_dbus_proxy_call_sync(
+        state->mpris_proxy,
+        "org.freedesktop.DBus.Properties.Get",
+        g_variant_new("(ss)", "org.mpris.MediaPlayer2.Player", "PlaybackStatus"),
+        G_DBUS_CALL_FLAGS_NONE,
+        -1, NULL, &error
+    );
+
+    if (result) {
+        GVariant *value = NULL;
+        g_variant_get(result, "(v)", &value);
+        if (value) {
+            const gchar *status = g_variant_get_string(value, NULL);
+            state->is_playing = g_strcmp0(status, "Playing") == 0;
+
+            if (state->is_playing) {
+                gchar *icon_path = get_icon_path("pause.svg");
+                gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
+                free_path(icon_path);
+                if (state->play_button) {
+                    gtk_widget_add_css_class(state->play_button, "playing");
+                }
+            } else {
+                gchar *icon_path = get_icon_path("play.svg");
+                gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
+                free_path(icon_path);
+                if (state->play_button) {
+                    gtk_widget_remove_css_class(state->play_button, "playing");
+                }
+            }
+            g_variant_unref(value);
+        }
+        g_variant_unref(result);
+    } else if (error) {
+        g_error_free(error);
+    }
+
+    return G_SOURCE_REMOVE;
+}
+
 static void on_properties_changed(GDBusProxy *proxy, GVariant *changed_properties,
                                   GStrv invalidated_properties, gpointer user_data) {
     AppState *state = (AppState *)user_data;
     update_metadata(state);
-    update_playback_status(state);
+    // Use explicit fetch instead of cached properties for reliable status
+    refresh_playback_status(state);
 }
 
 static void connect_to_player(AppState *state, const gchar *bus_name) {
@@ -910,13 +991,28 @@ static void connect_to_player(AppState *state, const gchar *bus_name) {
         g_object_unref(player_proxy);
     }
 
-    // Check if player supports seeking
+    // Check if player supports seeking (explicit fetch, don't rely on cache)
     state->can_seek = FALSE;
-    GVariant *can_seek_var = g_dbus_proxy_get_cached_property(state->mpris_proxy, "CanSeek");
-    if (can_seek_var) {
-        state->can_seek = g_variant_get_boolean(can_seek_var);
-        g_variant_unref(can_seek_var);
+    GError *seek_error = NULL;
+    GVariant *seek_result = g_dbus_proxy_call_sync(
+        state->mpris_proxy,
+        "org.freedesktop.DBus.Properties.Get",
+        g_variant_new("(ss)", "org.mpris.MediaPlayer2.Player", "CanSeek"),
+        G_DBUS_CALL_FLAGS_NONE,
+        -1, NULL, &seek_error
+    );
+    if (seek_result) {
+        GVariant *seek_value = NULL;
+        g_variant_get(seek_result, "(v)", &seek_value);
+        if (seek_value) {
+            state->can_seek = g_variant_get_boolean(seek_value);
+            g_variant_unref(seek_value);
+        }
+        g_variant_unref(seek_result);
+    } else if (seek_error) {
+        g_error_free(seek_error);
     }
+    g_print("CanSeek: %s\n", state->can_seek ? "true" : "false");
 
     update_metadata(state);
     update_playback_status(state);
@@ -1222,7 +1318,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_set_size_request(progress_bar, 140, 16);  // Taller for easier clicking
 
     // Connect seek signal - uses debounce to perform seek after user stops interacting
-    g_signal_connect(progress_bar, "value-changed", G_CALLBACK(on_seek_value_changed), state);
+    // Store handler ID so we can block it during programmatic updates
+    state->seek_handler_id = g_signal_connect(progress_bar, "value-changed", G_CALLBACK(on_seek_value_changed), state);
 
     GtkWidget *time_remaining = gtk_label_new("--:--");
     state->time_remaining = time_remaining;
@@ -1395,6 +1492,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
     // Update position every second
     state->update_timer = g_timeout_add_seconds(1, update_position_tick, state);
+
+    // Refresh playback status after main loop starts (D-Bus cache delay)
+    g_timeout_add(500, refresh_playback_status, state);
 
     g_print("HyprWave Hi-Fi Edition v%s started!\n", HYPRWAVE_VERSION);
 }
