@@ -1,6 +1,98 @@
-/* GTK4 transparent window */
-window {
+/* ========================================
+   HyprWave Color Scheme & Variables
+   Edit these to customize your theme!
+   ======================================== */
+
+:root {
+    /* Background Colors - Frosted Glass */
+    --bg-primary: rgba(240, 245, 250, 0.75);
+    --bg-secondary: rgba(230, 238, 245, 0.75);
+    --bg-album-cover: rgba(220, 228, 235, 0.85);
+    --bg-album-secondary: rgba(210, 220, 230, 0.85);
+    
+    /* Button Colors - Default (Prev/Next) - Steel Gray */
+    --btn-default: rgba(200, 210, 220, 0.85);
+    --btn-default-secondary: rgba(190, 200, 210, 0.85);
+    --btn-default-hover: rgba(210, 220, 230, 0.92);
+    --btn-default-hover-secondary: rgba(200, 210, 220, 0.92);
+    
+    /* Button Colors - Play/Pause - Brushed Steel */
+    --btn-play: rgba(180, 190, 200, 0.95);
+    --btn-play-secondary: rgba(170, 180, 190, 0.95);
+    --btn-play-hover: rgba(190, 200, 210, 0.98);
+    --btn-play-hover-secondary: rgba(180, 190, 200, 0.98);
+    --btn-play-active: rgba(160, 170, 180, 0.95);
+    --btn-play-active-secondary: rgba(150, 160, 170, 0.95);
+    
+    /* Button Colors - Expand - Light Steel */
+    --btn-expand: rgba(185, 195, 205, 0.95);
+    --btn-expand-secondary: rgba(175, 185, 195, 0.95);
+    --btn-expand-hover: rgba(195, 205, 215, 0.98);
+    --btn-expand-hover-secondary: rgba(185, 195, 205, 0.98);
+    --btn-expand-active: rgba(165, 175, 185, 0.95);
+    --btn-expand-active-secondary: rgba(155, 165, 175, 0.95);
+    
+    /* Progress Bar Colors */
+    --progress-bg: rgba(200, 210, 220, 0.25);
+    --progress-fill-start: rgba(160, 170, 180, 0.95);
+    --progress-fill-end: rgba(180, 190, 200, 0.95);
+    
+    /* Slider Handle Colors */
+    --handle-color: rgba(140, 150, 160, 0.98);
+    --handle-hover: rgba(120, 130, 140, 1.0);
+    --handle-border: rgba(100, 110, 120, 0.5);
+    --handle-shadow: rgba(0, 0, 0, 0.3);
+    
+    /* Text Colors */
+    --text-primary: rgba(40, 50, 60, 0.95);
+    --text-secondary: rgba(60, 70, 80, 0.85);
+    --text-tertiary: rgba(80, 90, 100, 0.75);
+    --text-muted: rgba(100, 110, 120, 0.65);
+    
+    /* Border Colors */
+    --border-primary: rgba(180, 190, 200, 0.35);
+    --border-button: rgba(170, 180, 190, 0.3);
+    --border-button-hover: rgba(160, 170, 180, 0.45);
+    --border-play: rgba(150, 160, 170, 0.4);
+    --border-play-hover: rgba(140, 150, 160, 0.55);
+    --border-expand: rgba(155, 165, 175, 0.4);
+    --border-expand-hover: rgba(145, 155, 165, 0.55);
+    
+    /* Shadow Colors */
+    --shadow-default: rgba(0, 0, 0, 0.15);
+    --shadow-button: rgba(0, 0, 0, 0.1);
+    --shadow-play: rgba(100, 110, 120, 0.2);
+    --shadow-play-hover: rgba(90, 100, 110, 0.3);
+    --shadow-expand: rgba(100, 110, 120, 0.2);
+    --shadow-expand-hover: rgba(90, 100, 110, 0.3);
+    --shadow-focus: rgba(120, 130, 140, 0.4);
+    
+    /* Spacing & Sizes */
+    --border-radius-container: 100px;
+    --border-radius-section: 20px;
+    --border-radius-album: 16px;
+    --border-radius-button: 50%;
+    --border-radius-progress: 2px;
+    
+    --padding-container: 12px;
+    --padding-section: 16px;
+}
+
+/* ========================================
+   Base Styles
+   ======================================== */
+
+/* GTK4 transparent window - CRITICAL for compositor transparency */
+window, 
+window.background,
+.hyprwave-window {
     background-color: transparent;
+    background-image: none;
+}
+
+/* Ensure ALL window-level elements are transparent */
+window > * {
+    background: transparent;
 }
 
 /* Main container - transparent */
@@ -8,38 +100,92 @@ window {
     background: transparent;
 }
 
-/* Control container - capsule shaped */
-.control-container {
-    background: linear-gradient(145deg, rgba(45, 45, 55, 0.95), rgba(30, 30, 40, 0.95));
-    border-radius: 100px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
+/* ========================================
+   Control Container (Vertical Bar)
+   ======================================== */
 
-    padding: 12px;
+.control-container {
+    background: linear-gradient(145deg, var(--bg-primary), var(--bg-secondary));
+    border-radius: var(--border-radius-container);
+    border: 1px solid var(--border-primary);
+
+    padding: var(--padding-container);
     margin: 0;
 }
 
-/* Expanded section - rounded rectangle */
-.expanded-section {
-    background: linear-gradient(145deg, rgba(45, 45, 55, 0.95), rgba(30, 30, 40, 0.95));
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    padding: 16px;
-    margin: 0;
+/* ========================================
+   Control Container (Horizontal Bar)
+   For Top/Bottom Layouts
+   ======================================== */
 
-    min-width: 160px;
+.control-container-horizontal {
+    /* Match the vertical style exactly for consistency */
+    background: linear-gradient(145deg, var(--bg-primary), var(--bg-secondary));
+    border-radius: var(--border-radius-container); /* Keeps the pill shape */
+    border: 1px solid var(--border-primary);
+
+    /* Horizontal padding is critical here to prevent buttons 
+       from touching the rounded edges */
+    padding: 8px 24px; 
+    margin: 0;
+}
+
+/* ========================================
+   Expanded Section (Album Details Card)
+   ======================================== */
+/* ========================================
+   Expanded Section (Album Details Card)
+   ======================================== */
+
+.expanded-section {
+    background: linear-gradient(145deg, var(--bg-primary), var(--bg-secondary));
+    border-radius: var(--border-radius-section);
+    border: 1px solid var(--border-primary);
+    padding: var(--padding-section);
+    margin: 0;
+    margin-top: 4px;  /* Reduced spacing from control bar */
+
+    min-width: 160px !important;
+    max-height: 180px !important;
+    height: 180px !important;
+
+}
+
+/* ========================================
+   Expanded Section (Horizontal Layout)
+   For Top/Bottom Layouts
+   ======================================== */
+
+.expanded-section-horizontal {
+    background: linear-gradient(145deg, var(--bg-primary), var(--bg-secondary));
+    border-radius: var(--border-radius-section);
+    border: 1px solid var(--border-primary);
+
+        
+    /* Slightly different padding/margin to look good below/above the bar */
+    padding: var(--padding-section);
+    margin-top: 2px !important; /* Adds gap between control bar and this panel */
+    margin-bottom: 2px !important;
+    
+    /* Ensure it doesn't get too squeezed */
+    min-width: 300px; 
 }
 
 /* Album cover */
 .album-cover {
-    background: linear-gradient(135deg, rgba(60, 60, 75, 0.8), rgba(40, 40, 55, 0.8));
-    border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    background: linear-gradient(135deg, var(--bg-album-cover), var(--bg-album-secondary));
+    border-radius: var(--border-radius-album);
+    border: 1px solid var(--border-button);
+    box-shadow: 0 4px 16px var(--shadow-button);
 }
 
-/* Source label */
+/* ========================================
+   Text Styles
+   ======================================== */
+
+/* Source label (e.g., "Spotify") */
 .source-label {
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 500;
     margin-top: 8px;
@@ -49,7 +195,7 @@ window {
 
 /* Track title */
 .track-title {
-    color: rgba(255, 255, 255, 0.95);
+    color: var(--text-primary);
     font-size: 14px;
     font-weight: 600;
     margin-top: 4px;
@@ -57,132 +203,166 @@ window {
 
 /* Artist label */
 .artist-label {
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--text-secondary);
     font-size: 12px;
     font-weight: 500;
     margin-top: 2px;
 }
 
-/* Progress bar */
+/* Time remaining */
+.time-remaining {
+    color: var(--text-tertiary);
+    font-size: 12px;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+/* ========================================
+   Progress Bar - FIXED FOR GTK4
+   ======================================== */
+
 .track-progress {
     min-height: 4px;
     margin-top: 8px;
     margin-bottom: 4px;
 }
 
+/* The background track */
 .track-progress trough {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 2px;
+    background: var(--progress-bg);
+    border-radius: var(--border-radius-progress);
     min-height: 4px;
 }
 
+/* The filled progress portion - GTK4 specific */
 .track-progress progress {
-    background: linear-gradient(90deg, rgba(100, 180, 255, 0.95), rgba(140, 100, 200, 0.95));
-    border-radius: 2px;
+    background: linear-gradient(90deg, var(--progress-fill-start), var(--progress-fill-end));
+    border-radius: var(--border-radius-progress);
     min-height: 4px;
 }
 
-/* Time remaining */
-.time-remaining {
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 12px;
-    font-weight: 500;
-    margin-top: 2px;
+/* GTK4 also needs this for the fill bar to show */
+progressbar trough {
+    background: var(--progress-bg);
+    border-radius: var(--border-radius-progress);
+    min-height: 4px;
 }
 
-/* All control buttons - fully circular */
+progressbar progress {
+    background: linear-gradient(90deg, var(--progress-fill-start), var(--progress-fill-end));
+    border-radius: var(--border-radius-progress);
+    min-height: 4px;
+}
+
+/* ========================================
+   Control Buttons
+   ======================================== */
+
+/* All control buttons - base styles */
 .control-button {
     padding: 0;
     margin: 0;
     min-width: 44px;
     min-height: 44px;
     
-    background: linear-gradient(135deg, rgba(80, 80, 95, 0.9), rgba(60, 60, 75, 0.9));
-    color: rgba(255, 255, 255, 0.95);
-    border: 1.5px solid rgba(255, 255, 255, 0.2);
-    border-radius: 50%;
+    background: linear-gradient(135deg, var(--btn-default), var(--btn-default-secondary));
+    color: var(--text-primary);
+    border: 1.5px solid var(--border-button);
+    border-radius: var(--border-radius-button);
     
     box-shadow: 
-        0 4px 12px rgba(0, 0, 0, 0.3),
+        0 4px 12px var(--shadow-button),
         inset 0 1px 1px rgba(255, 255, 255, 0.15);
     
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .control-button:hover {
-    background: linear-gradient(135deg, rgba(100, 100, 120, 0.95), rgba(80, 80, 100, 0.95));
-    border-color: rgba(255, 255, 255, 0.35);
+    background: linear-gradient(135deg, var(--btn-default-hover), var(--btn-default-hover-secondary));
+    border-color: var(--border-button-hover);
     transform: scale(1.08);
     box-shadow: 
-        0 6px 16px rgba(0, 0, 0, 0.4),
+        0 6px 16px var(--shadow-button),
         inset 0 1px 1px rgba(255, 255, 255, 0.2);
 }
 
 .control-button:active {
     transform: scale(0.96);
     box-shadow: 
-        0 2px 8px rgba(0, 0, 0, 0.3),
+        0 2px 8px var(--shadow-button),
         inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-/* Play button - vibrant blue */
+/* ========================================
+   Play/Pause Button (Blue)
+   ======================================== */
+
 .play-button {
-    background: linear-gradient(135deg, rgba(100, 180, 255, 0.95), rgba(70, 150, 235, 0.95));
-    border-color: rgba(120, 200, 255, 0.5);
+    background: linear-gradient(135deg, var(--btn-play), var(--btn-play-secondary));
+    border-color: var(--border-play);
     box-shadow: 
-        0 4px 16px rgba(70, 150, 235, 0.4),
+        0 4px 16px var(--shadow-play),
         inset 0 1px 1px rgba(255, 255, 255, 0.3);
 }
 
 .play-button:hover {
-    background: linear-gradient(135deg, rgba(120, 200, 255, 0.98), rgba(90, 170, 255, 0.98));
-    border-color: rgba(140, 220, 255, 0.7);
+    background: linear-gradient(135deg, var(--btn-play-hover), var(--btn-play-hover-secondary));
+    border-color: var(--border-play-hover);
     box-shadow: 
-        0 6px 20px rgba(70, 150, 235, 0.6),
+        0 6px 20px var(--shadow-play-hover),
         inset 0 1px 1px rgba(255, 255, 255, 0.4);
 }
 
 .play-button:active {
-    background: linear-gradient(135deg, rgba(80, 160, 235, 0.95), rgba(60, 140, 215, 0.95));
+    background: linear-gradient(135deg, var(--btn-play-active), var(--btn-play-active-secondary));
     box-shadow: 
-        0 2px 10px rgba(70, 150, 235, 0.5),
+        0 2px 10px var(--shadow-play),
         inset 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
-/* Expand button - purple */
+/* ========================================
+   Expand Button (Purple)
+   ======================================== */
+
 .expand-button {
-    background: linear-gradient(135deg, rgba(140, 100, 200, 0.95), rgba(120, 80, 180, 0.95));
-    border-color: rgba(160, 120, 220, 0.5);
+    background: linear-gradient(135deg, var(--btn-expand), var(--btn-expand-secondary));
+    border-color: var(--border-expand);
     box-shadow: 
-        0 4px 16px rgba(120, 80, 180, 0.4),
+        0 4px 16px var(--shadow-expand),
         inset 0 1px 1px rgba(255, 255, 255, 0.3);
 }
 
 .expand-button:hover {
-    background: linear-gradient(135deg, rgba(160, 120, 220, 0.98), rgba(140, 100, 200, 0.98));
-    border-color: rgba(180, 140, 240, 0.7);
+    background: linear-gradient(135deg, var(--btn-expand-hover), var(--btn-expand-hover-secondary));
+    border-color: var(--border-expand-hover);
     box-shadow: 
-        0 6px 20px rgba(120, 80, 180, 0.6),
+        0 6px 20px var(--shadow-expand-hover),
         inset 0 1px 1px rgba(255, 255, 255, 0.4);
 }
 
 .expand-button:active {
-    background: linear-gradient(135deg, rgba(120, 80, 180, 0.95), rgba(100, 60, 160, 0.95));
+    background: linear-gradient(135deg, var(--btn-expand-active), var(--btn-expand-active-secondary));
     box-shadow: 
-        0 2px 10px rgba(120, 80, 180, 0.5),
+        0 2px 10px var(--shadow-expand),
         inset 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
-/* Previous/Next buttons */
+/* ========================================
+   Previous/Next Buttons
+   ======================================== */
+
 .prev-button, .next-button {
-    background: linear-gradient(135deg, rgba(90, 90, 110, 0.92), rgba(70, 70, 90, 0.92));
+    background: linear-gradient(135deg, var(--btn-default), var(--btn-default-secondary));
 }
 
 .prev-button:hover, .next-button:hover {
-    background: linear-gradient(135deg, rgba(110, 110, 135, 0.96), rgba(90, 90, 115, 0.96));
+    background: linear-gradient(135deg, var(--btn-default-hover), var(--btn-default-hover-secondary));
 }
 
-/* Remove default button styling */
+/* ========================================
+   Focus & Accessibility
+   ======================================== */
+
 button {
     outline: none;
 }
@@ -190,7 +370,135 @@ button {
 button:focus {
     outline: none;
     box-shadow: 
-        0 0 0 3px rgba(100, 180, 255, 0.5),
-        0 4px 16px rgba(70, 150, 235, 0.4),
+        0 0 0 3px var(--shadow-focus),
+        0 4px 16px var(--shadow-play),
         inset 0 1px 1px rgba(255, 255, 255, 0.3);
 }
+
+/* ========================================
+   Notification Styles
+   ======================================== */
+
+.notification-window {
+    background: transparent;
+}
+
+.notification-container {
+    background: linear-gradient(145deg, var(--bg-primary), var(--bg-secondary));
+    border-radius: var(--border-radius-section);
+    border: 1px solid var(--border-primary);
+    padding: 10px 12px;  /* Reduced from 12px to 10px vertical padding */
+    min-width: 280px;    /* Reduced from 320px */
+    max-width: 300px;    /* Added max-width */
+}
+
+.notification-album {
+    background: linear-gradient(135deg, var(--bg-album-cover), var(--bg-album-secondary));
+    border-radius: var(--border-radius-album);
+    border: 1px solid var(--border-button);
+}
+
+.notification-header {
+    color: var(--text-muted);
+    font-size: 10px;      /* Reduced from 11px */
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;   /* Reduced from 8px */
+}
+
+.notification-song {
+    color: var(--text-primary);
+    font-size: 13px;      /* Reduced from 14px */
+    font-weight: 600;
+    line-height: 1.2;     /* Added for tighter spacing */
+}
+
+.notification-artist {
+    color: var(--text-secondary);
+    font-size: 11px;      /* Reduced from 12px */
+    font-weight: 500;
+    line-height: 1.2;     /* Added for tighter spacing */
+}
+
+/* ========================================
+   Volume Control Styles
+   ======================================== */
+
+.volume-container {
+    background: linear-gradient(145deg, var(--bg-primary), var(--bg-secondary));
+    border-radius: var(--border-radius-section);
+    border: 1px solid var(--border-primary);
+    padding: 12px;
+    margin: 0px;
+}
+
+.volume-icon {
+    min-width: 20px;
+    min-height: 20px;
+}
+
+.volume-percentage {
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    min-width: 40px;
+}
+
+/* Volume slider - similar to progress bar but with different colors */
+.volume-slider {
+    min-height: 24px;
+    min-width: 24px;
+}
+
+/* The background track */
+.volume-slider trough {
+    background: var(--progress-bg);
+    border-radius: var(--border-radius-progress);
+    min-height: 6px;
+    min-width: 6px;
+}
+
+/* The filled portion */
+.volume-slider progress {
+    background: linear-gradient(90deg, var(--btn-default), var(--btn-default-secondary));
+    border-radius: var(--border-radius-progress);
+    min-height: 6px;
+    min-width: 6px;
+}
+
+/* The slider handle */
+.volume-slider slider {
+    min-height: 16px;
+    min-width: 16px;
+    background: linear-gradient(135deg, var(--btn-default), var(--btn-default-secondary));
+    border: 2px solid var(--border-button);
+    border-radius: 50%;
+
+}
+
+.volume-slider slider:hover {
+    background: linear-gradient(135deg, var(--btn-default-hover), var(--btn-default-hover-secondary));
+    border-color: var(--border-button-hover);
+    transform: scale(1.1);
+}
+
+.volume-slider slider:active {
+    background: linear-gradient(135deg, var(--btn-default), var(--btn-default-secondary));
+    transform: scale(0.95);
+}
+
+/* GTK4 specific for vertical sliders */
+.volume-slider.vertical trough {
+    min-width: 6px;
+}
+
+.volume-slider.vertical progress {
+    min-width: 6px;
+}
+
+
+
+
+
+
