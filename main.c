@@ -553,6 +553,13 @@ static void on_album_double_click(GtkGestureClick *gesture,
     }
 }
 
+static gboolean enable_smooth_transitions(gpointer user_data) {
+    GtkWidget *window_revealer = GTK_WIDGET(user_data);
+    gtk_revealer_set_transition_duration(GTK_REVEALER(window_revealer), 300);
+    g_print("Smooth transitions enabled\n");
+    return G_SOURCE_REMOVE;
+}
+
 static void on_volume_visibility_changed(GObject *revealer, GParamSpec *pspec, gpointer user_data) {
     AppState *state = (AppState *)user_data;
     
@@ -594,6 +601,12 @@ static gboolean delayed_revealer_reveal(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
+// COMPLETE FIXED VERSION - Replace your entire activate() function
+
+// COMPLETE FIXED VERSION - Replace your entire activate() function
+
+// COMPLETE FIXED VERSION - Replace your entire activate() function
+
 static void activate(GtkApplication *app, gpointer user_data) {
     AppState *state = g_new0(AppState, 1);
     state->is_playing = FALSE;
@@ -612,7 +625,19 @@ static void activate(GtkApplication *app, gpointer user_data) {
     state->window = window;
     gtk_window_set_title(GTK_WINDOW(window), "HyprWave");
     
-    // LAYER SHELL SETUP BEFORE ANY PRESENTATION (CRITICAL FIX)
+    // ====================================================================
+    // CRITICAL FIX #1: Set window size IMMEDIATELY to match control_bar
+    // This prevents the snap/jump on first animation
+    // ====================================================================
+    if (state->layout->is_vertical) {
+        gtk_window_set_default_size(GTK_WINDOW(window), 70, -1);
+        gtk_window_set_resizable(GTK_WINDOW(window), FALSE);  // Prevent width changes
+    } else {
+        gtk_window_set_default_size(GTK_WINDOW(window), -1, 60);
+        gtk_window_set_resizable(GTK_WINDOW(window), FALSE);  // Prevent height changes
+    }
+    
+    // LAYER SHELL SETUP
     gtk_layer_init_for_window(GTK_WINDOW(window));
     gtk_layer_set_layer(GTK_WINDOW(window), GTK_LAYER_SHELL_LAYER_OVERLAY);
     gtk_layer_set_namespace(GTK_WINDOW(window), "hyprwave");
@@ -678,24 +703,18 @@ static void activate(GtkApplication *app, gpointer user_data) {
     // Initialize volume AFTER widgets exist
     state->volume = volume_init(NULL, state->layout->is_vertical);
 
-// FIXED VERTICAL LAYOUT SIZING - Create expanded_with_volume FIRST with proper constraints
     GtkWidget *expanded_with_volume;
     if (state->layout->is_vertical) {
-        // VERTICAL: Fixed height for consistent first expand - REDUCED SPACING
-        expanded_with_volume = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);  /* Changed from 2 to 0 */
+        expanded_with_volume = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         gtk_box_append(GTK_BOX(expanded_with_volume), state->volume->revealer);
         gtk_box_append(GTK_BOX(expanded_with_volume), expanded_section);
-        
-        // VERTICAL FIX: Proper expand flags and fixed height
         gtk_widget_set_size_request(expanded_with_volume, -1, 160);
         gtk_widget_set_vexpand(expanded_section, TRUE);
         gtk_widget_set_vexpand(state->volume->revealer, FALSE);
     } else {
-        // HORIZONTAL: Fixed width
         expanded_with_volume = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
         gtk_box_append(GTK_BOX(expanded_with_volume), expanded_section);
         gtk_box_append(GTK_BOX(expanded_with_volume), state->volume->revealer);
-        //gtk_widget_set_size_request(expanded_with_volume, 420, -1);
     }
     
     state->expanded_with_volume = expanded_with_volume;
@@ -763,7 +782,6 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
     GtkWidget *window_revealer = gtk_revealer_new();
     state->window_revealer = window_revealer;
-    gtk_revealer_set_reveal_child(GTK_REVEALER(window_revealer), FALSE);
     
     GtkRevealerTransitionType window_transition;
     if (state->layout->edge == EDGE_RIGHT) {
@@ -771,25 +789,65 @@ static void activate(GtkApplication *app, gpointer user_data) {
     } else if (state->layout->edge == EDGE_LEFT) {
         window_transition = GTK_REVEALER_TRANSITION_TYPE_SLIDE_RIGHT;
     } else if (state->layout->edge == EDGE_TOP) {
-        window_transition = GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP;
-    } else {
         window_transition = GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN;
+    } else {
+        window_transition = GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP;
     }
     gtk_revealer_set_transition_type(GTK_REVEALER(window_revealer), window_transition);
     gtk_revealer_set_transition_duration(GTK_REVEALER(window_revealer), 300);
     gtk_revealer_set_child(GTK_REVEALER(window_revealer), main_container);
-    gtk_revealer_set_reveal_child(GTK_REVEALER(window_revealer), TRUE);
+    // CRITICAL: Start HIDDEN so we can control the first reveal
+    gtk_revealer_set_reveal_child(GTK_REVEALER(window_revealer), FALSE);
     g_signal_connect(window_revealer, "notify::child-revealed", 
                      G_CALLBACK(on_window_hide_complete), state);
 
     gtk_window_set_child(GTK_WINDOW(window), window_revealer);
 
-    // CRITICAL: Force size computation BEFORE animations
+    // ====================================================================
+    // CRITICAL FIX #2: Pre-warm BOTH revealers to establish geometry
+    // The window_revealer is choppy until the internal revealer has expanded once
+    // because layer shell needs to know the maximum window size
+    // ====================================================================
+    
+    // Step 1: Realize and present
     gtk_widget_realize(window);
-    gtk_widget_queue_resize(window);
-
-    // PRESENT LAST after all setup
     gtk_window_present(GTK_WINDOW(window));
+    
+    // Step 2: Process initial events
+    while (g_main_context_pending(NULL)) {
+        g_main_context_iteration(NULL, FALSE);
+    }
+    
+    // Step 3: Disable ALL animations temporarily
+    guint window_duration = gtk_revealer_get_transition_duration(GTK_REVEALER(window_revealer));
+    guint internal_duration = gtk_revealer_get_transition_duration(GTK_REVEALER(revealer));
+    gtk_revealer_set_transition_duration(GTK_REVEALER(window_revealer), 0);
+    gtk_revealer_set_transition_duration(GTK_REVEALER(revealer), 0);
+    
+    // Step 4: Expand window_revealer (show control bar)
+    gtk_revealer_set_reveal_child(GTK_REVEALER(window_revealer), TRUE);
+    gtk_widget_queue_allocate(window);
+    while (g_main_context_pending(NULL)) {
+        g_main_context_iteration(NULL, FALSE);
+    }
+    
+    // Step 5: Expand internal revealer (show expanded section) - THIS IS KEY
+    gtk_revealer_set_reveal_child(GTK_REVEALER(revealer), TRUE);
+    gtk_widget_queue_allocate(window);
+    while (g_main_context_pending(NULL)) {
+        g_main_context_iteration(NULL, FALSE);
+    }
+    
+    // Step 6: Collapse internal revealer back to control bar only
+    gtk_revealer_set_reveal_child(GTK_REVEALER(revealer), FALSE);
+    gtk_widget_queue_allocate(window);
+    while (g_main_context_pending(NULL)) {
+        g_main_context_iteration(NULL, FALSE);
+    }
+    
+    // Step 7: Restore animation durations - now layer shell knows max geometry
+    gtk_revealer_set_transition_duration(GTK_REVEALER(window_revealer), window_duration);
+    gtk_revealer_set_transition_duration(GTK_REVEALER(revealer), internal_duration);
 
     global_state = state;
     signal(SIGUSR1, handle_sigusr1);
@@ -797,11 +855,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
     find_active_player(state);
     state->update_timer = g_timeout_add_seconds(1, update_position_tick, state);
-
-    // Safe delayed animations
-    g_timeout_add(50, delayed_window_show, window);
-    g_timeout_add(100, delayed_revealer_reveal, window_revealer);
 }
+
+
 
 int main(int argc, char **argv) {
     GtkApplication *app = gtk_application_new("com.hyprwave.app", G_APPLICATION_DEFAULT_FLAGS);
@@ -811,4 +867,3 @@ int main(int argc, char **argv) {
     g_object_unref(app);
     return status;
 }
-
