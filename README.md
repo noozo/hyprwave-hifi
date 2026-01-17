@@ -1,21 +1,26 @@
-# 🌊 HyprWave - v0.6 (latest release)
+# 🌊 hyprwave - v0.7 (latest release)
 
 A sleek, modern music control bar for Wayland compositors (Hyprland, Niri, Sway, etc.) with MPRIS integration.
 
 
-Updates till now:  - Multi-Anchor support, Notifications, Music Controls, CSS Styling (control bar, expanded section and notifications), and launching it as an application, huge UI bug fixing, ability to seek to different song part via click or drag and click, volume controls added in the latest update.
+Updates till now:  - Multi-Anchor support, Notifications, Music Controls, CSS Styling (control bar, expanded section and notifications), and launching it as an application, huge UI bug fixing, ability to seek to different song part via click or drag and click, volume controls added in the latest update. All visual bugs fixed.
 
 Built and primarily tested on Niri, for all wayland compositors that support GTK4 and GTK4-layer-shell.
 
 Also, Massive update- hyprwave is now on AUR. 
 Simply install it with-
 
+
+
+
 ```yay -S hyprwave```
+
+
 
 
 It will not give you the bleeding new updates, but the latest releases.
 
-#### 📸 Screenshots
+#### Screenshots & GIFs
 
 ### Vertical Layout
 
@@ -57,7 +62,7 @@ It will not give you the bleeding new updates, but the latest releases.
 
 A sleek, modern music control overlay for Wayland compositors (Hyprland, Niri, Sway). Built with GTK4 and gtk4-layer-shell.
 
-## ✨ Features
+## Features
 
 - **Elegant Design** - Glassmorphic UI with smooth animations
 - **MPRIS Integration** - Works with Spotify, VLC, and any MPRIS-compatible player
@@ -83,7 +88,7 @@ Smooth slide-in notifications appear in the top-right corner when tracks change,
 
 Double click the album cover to reveal the volume bar, and double click it back to hide it again. Volume bar auto-hides itself after 3 seconds, or after you collapse the expanded state!
 
-## 🚀 Installation
+## Installation
 
 ### Dependencies
 ```bash
@@ -114,7 +119,7 @@ The installer will:
 - Install `hyprwave-toggle` script for keybinds
 - Create config at `~/.config/hyprwave/config.conf`
 
-## 🎵 Usage
+## Usage
 
 ### Quick Start
 
@@ -245,7 +250,7 @@ spawn-at-startup "hyprwave"
 ```
 
 
-## 🔧 Troubleshooting
+##  Troubleshooting
 
 ### Black box around HyprWave (Hyprland)
 
@@ -257,6 +262,9 @@ layerrule = noblur, hyprwave
 layerrule = noblur, hyprwave-notification
 ```
 If that doesn't work, it most probably is a broken gtk4 or gtk4-layer-shell package- just remove them, reinstall them, and try it again.
+
+Refer to Issues for a more precise explanation.
+
 ### Notifications not appearing
 
 1. Check that notifications are enabled in `~/.config/hyprwave/config.conf`
@@ -274,7 +282,7 @@ If that doesn't work, it most probably is a broken gtk4 or gtk4-layer-shell pack
 
 HyprWave requires the music player to provide album art URLs via MPRIS. Desktop apps work better than web browsers for this.
 
-## 🛠️ Technical Details
+##  Technical Details
 
 - **Language:** C
 - **GUI Framework:** GTK4
@@ -292,10 +300,9 @@ Resources are searched in this order:
 
 Config: `~/.config/hyprwave/config.conf`
 
-## 🗺️ Roadmap
+## Roadmap
 
-### v0.6.0 (Current and NEW!)
-- [ ] Volume control integration
+### v0.7.0 (Current and NEW!)
 - [ ] Bug and Animation fixes
 
 ### v1.0.0 (Goals)
@@ -303,7 +310,7 @@ Config: `~/.config/hyprwave/config.conf`
 - [ ] Custom dimensions and colors via config
 - [ ] Plugin system for extensibility
 
-## 🤝 Contributing
+##  Contributing
 
 Contributions welcome! Feel free to:
 - Report bugs via [GitHub Issues](https://github.com/shantanubaddar/hyprwave/issues)
@@ -311,11 +318,11 @@ Contributions welcome! Feel free to:
 - Create pull requests
 - Share your custom themes/icons
 
-## 📝 License
+##  License
 
 Open source. Free to use, modify, and distribute.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Built with [GTK4](https://gtk.org/)
 - Uses [gtk4-layer-shell](https://github.com/wmww/gtk-layer-shell)
