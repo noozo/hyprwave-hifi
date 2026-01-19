@@ -188,6 +188,21 @@ layerrule = noblur, hyprwave
 layerrule = noblur, hyprwave-notification
 ```
 
+If that doesn't work, it may be a broken gtk4 or gtk4-layer-shell package - try reinstalling them.
+
+### Notifications not appearing
+
+1. Check that notifications are enabled in `~/.config/hyprwave/config.conf`
+2. Verify both `enabled = true` and `now_playing = true` under `[Notifications]`
+3. Restart HyprWave after config changes
+
+### Keybinds not working
+
+1. Verify `hyprwave-toggle` is installed: `which hyprwave-toggle`
+2. Test manually: `hyprwave-toggle visibility` (with HyprWave running)
+3. Check your compositor config for syntax errors
+4. Reload your compositor config after adding keybinds
+
 ### Album art not loading
 
 Some players (especially Chromium-based) use ephemeral temp files for album art. This fork includes pre-loading to handle these cases.
