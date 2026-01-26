@@ -498,7 +498,43 @@ button:focus {
 }
 
 
+/* ========================================
+   Visualizer Bars - Idle Mode Animation
+   ======================================== */
 
+/* Container padding to keep bars inside control bar edges */
+.visualizer-container {
+    padding: 0px;  /* 5px padding on left/right keeps bars inside */
+    overflow: hidden;
+    padding-bottom: 1px;  /* Small bottom padding to align with control bar bottom */
+    border-radius: 0 0 12px 12px;
+}
 
+.visualizer-bar {
+    /* Simple two-color gradient - black theme */
+    background: linear-gradient(180deg, 
+        rgba(46, 44, 38, 0.95),   /* Primary: Steel blue */
+        rgba(38, 37, 33, 0.95));  /* Secondary: Lighter steel blue */
+    border-radius: 0px;
+    transition: all 0.05s ease-out;
+    /* Keep bars visible */
+    margin: 0px;
+    min-width: 1px;
+    min-height: 3px;
+}
 
+/* Smooth control bar height transitions for idle mode */
+.control-container-horizontal {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
+/* Smooth button fade transitions */
+.control-button {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
+                opacity 0.3s ease-in-out;
+}
+
+/* Ensure overlay respects size changes */
+overlay {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
