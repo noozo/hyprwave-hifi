@@ -9,125 +9,125 @@
 #include "notification.h"
 #include "art.h"
 #include "volume.h"
-
-#define HYPRWAVE_VERSION "0.5.4"
+#include "visualizer.h"
 
 typedef struct {
     GtkWidget *window;
     GtkWidget *window_revealer;
     GtkWidget *revealer;
-    GtkWidget *play_button;      // Play button (for animation class)
     GtkWidget *play_icon;
     GtkWidget *expand_icon;
     GtkWidget *album_cover;
     GtkWidget *source_label;
-    GtkWidget *format_label;     // Bitrate/format display
+    GtkWidget *format_label;           // Hi-Fi: Bitrate/format display
     GtkWidget *track_title;
     GtkWidget *artist_label;
     GtkWidget *time_remaining;
-    GtkWidget *progress_bar;     // Now a GtkScale for seek support
-    GtkWidget *player_label;     // Player selector display
+    GtkWidget *progress_bar;
+    GtkWidget *player_label;           // Hi-Fi: Player selector display
+    GtkWidget *expanded_with_volume;
     gboolean is_playing;
     gboolean is_expanded;
     gboolean is_visible;
-    gboolean is_seeking;         // True while user is dragging seek slider
-    gboolean can_seek;           // True if current player supports seeking
+    gboolean is_seeking;
+    gboolean can_seek;                 // Hi-Fi: True if player supports seeking
     GDBusProxy *mpris_proxy;
-    gchar *current_player;       // D-Bus name of current player
+    gchar *current_player;
     guint update_timer;
     LayoutConfig *layout;
     NotificationState *notification;
+    VolumeState *volume;
     gchar *last_track_id;
-    gchar *last_title;           // Fallback for track change detection
-    gchar *current_track_id;     // For seek operations
-    gint64 current_length;       // Track length in microseconds
-    // Player switching
-    gchar **players;             // Array of MPRIS player D-Bus names
-    gint player_count;
-    gint current_player_index;
-    gchar *player_display_name;  // Human-readable name from Identity
-    // Notification debounce
+    gchar *last_title;                 // Hi-Fi: Fallback for track change detection
+    gchar *current_track_id;           // Hi-Fi: For seek operations
+    gint64 current_length;             // Hi-Fi: Track length in microseconds
     guint notification_timer;
     gchar *pending_title;
     gchar *pending_artist;
     gchar *pending_art_url;
-    // Signal handler ID for blocking during programmatic updates
-    gulong seek_handler_id;
-    // Suppress notification during player switch
-    gboolean suppress_notification;
-    // Volume control
-    VolumeState *volume;
+    GtkWidget *control_bar_container;  // Store reference to control bar
+    GtkWidget *prev_btn;               // Store button references
+    GtkWidget *play_btn;
+    GtkWidget *next_btn;
+    GtkWidget *expand_btn;
+    // Hi-Fi: Multi-player support
+    gchar **players;                   // Array of MPRIS player D-Bus names
+    gint player_count;
+    gint current_player_index;
+    gchar *player_display_name;        // Human-readable name from Identity
+    gboolean suppress_notification;    // Suppress during player switch
+
+    VisualizerState *visualizer;       // Visualizer state
+    guint idle_timer;                  // Idle detection timer
+    gboolean is_idle_mode;             // Are we in visualizer mode?
+    guint morph_timer;                 // Button fade animation timer
+    gdouble button_fade_opacity;
 } AppState;
 
 static void update_position(AppState *state);
 static void update_metadata(AppState *state);
 static void update_playback_status(AppState *state);
-static gint64 get_variant_as_int64(GVariant *value);
 static void on_expand_clicked(GtkButton *button, gpointer user_data);
 static void on_properties_changed(GDBusProxy *proxy, GVariant *changed_properties,
                                   GStrv invalidated_properties, gpointer user_data);
+                                  
+static void exit_idle_mode(AppState *state);
+static void reset_idle_timer(AppState *state);
+static gboolean enter_idle_mode(gpointer user_data);
+
+// Hi-Fi: Multi-player functions
 static void load_available_players(AppState *state);
 static void switch_to_player(AppState *state, const gchar *bus_name);
+static void cycle_player(AppState *state, gboolean forward);
+static gchar* load_preferred_player(void);
+static void save_preferred_player(const gchar *bus_name);
 
-// Global state for signal handlers
 static AppState *global_state = NULL;
 
 // ========================================
-// PLAYER SWITCHING FUNCTIONS
+// Hi-Fi: PLAYER FILTERING
 // ========================================
 
 // Check if a D-Bus name should be excluded from player list
 static gboolean is_excluded_player(const gchar *name) {
-    // Always exclude playerctld (proxy that duplicates other players)
-    if (g_strstr_len(name, -1, "playerctld") != NULL)
-        return TRUE;
+    // Exclude playerctld (it's a proxy, not a real player)
+    if (g_str_has_suffix(name, ".playerctld")) return TRUE;
 
-    // Allow known Electron music apps (check Identity for these)
-    // They register as chromium but have full MPRIS support
-    // We'll check their Identity property separately
+    // Exclude common browsers (poor MPRIS metadata)
+    const gchar *excluded[] = {
+        ".firefox", ".chromium", ".chrome", ".brave",
+        ".vivaldi", ".opera", ".edge", NULL
+    };
 
-    // Exclude browsers (limited MPRIS support)
-    if (g_strstr_len(name, -1, "firefox") != NULL ||
-        g_strstr_len(name, -1, "brave") != NULL)
-        return TRUE;
-
-    // For chromium instances, we need to check Identity to distinguish
-    // browser tabs from Electron apps like tidal-hifi
-    // This is handled in is_allowed_chromium_player()
+    for (const gchar **ex = excluded; *ex; ex++) {
+        if (g_str_has_suffix(name, *ex)) return TRUE;
+    }
     return FALSE;
 }
 
-// Check if a chromium-based player is actually a music app (not browser tab)
-static gboolean is_allowed_chromium_player(const gchar *bus_name) {
-    if (g_strstr_len(bus_name, -1, "chromium") == NULL)
-        return TRUE;  // Not chromium, allow
+// Check if chromium-based player is allowed (e.g., Cider, tidal-hifi)
+static gboolean is_allowed_chromium_player(const gchar *name) {
+    // Allow specific Chromium-based apps with good MPRIS support
+    const gchar *allowed[] = {
+        "Cider", "tidal", "hifi", "qobuz", "spotify", "Plexamp", NULL
+    };
 
-    // Query Identity to check if it's a known music app
-    GDBusProxy *proxy = g_dbus_proxy_new_for_bus_sync(
-        G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
-        bus_name, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2",
-        NULL, NULL
-    );
-
-    if (!proxy) return FALSE;
-
-    GVariant *identity = g_dbus_proxy_get_cached_property(proxy, "Identity");
-    gboolean allowed = FALSE;
-
-    if (identity) {
-        const gchar *id = g_variant_get_string(identity, NULL);
-        // Allow known music apps that use Electron/Chromium
-        if (g_strstr_len(id, -1, "TIDAL") != NULL ||
-            g_strstr_len(id, -1, "tidal") != NULL ||
-            g_strstr_len(id, -1, "Cider") != NULL ||      // Apple Music client
-            g_strstr_len(id, -1, "YouTube Music") != NULL)
-            allowed = TRUE;
-        g_variant_unref(identity);
+    for (const gchar **a = allowed; *a; a++) {
+        if (g_strstr_len(name, -1, *a)) return TRUE;
     }
 
-    g_object_unref(proxy);
-    return allowed;
+    // If not specifically allowed, check if it's a browser (disallow)
+    if (g_strstr_len(name, -1, "chromium") ||
+        g_strstr_len(name, -1, "chrome")) {
+        return FALSE;
+    }
+
+    return TRUE;  // Allow non-chromium players
 }
+
+// ========================================
+// Hi-Fi: PLAYER SWITCHING
+// ========================================
 
 // Load all available MPRIS players from D-Bus
 static void load_available_players(AppState *state) {
@@ -140,28 +140,17 @@ static void load_available_players(AppState *state) {
 
     GError *error = NULL;
     GDBusProxy *dbus_proxy = g_dbus_proxy_new_for_bus_sync(
-        G_BUS_TYPE_SESSION,
-        G_DBUS_PROXY_FLAGS_NONE,
-        NULL,
-        "org.freedesktop.DBus",
-        "/org/freedesktop/DBus",
-        "org.freedesktop.DBus",
-        NULL,
-        &error
-    );
+        G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
+        "org.freedesktop.DBus", "/org/freedesktop/DBus",
+        "org.freedesktop.DBus", NULL, &error);
 
     if (error) {
         g_error_free(error);
         return;
     }
 
-    GVariant *result = g_dbus_proxy_call_sync(
-        dbus_proxy,
-        "ListNames",
-        NULL,
-        G_DBUS_CALL_FLAGS_NONE,
-        -1, NULL, &error
-    );
+    GVariant *result = g_dbus_proxy_call_sync(dbus_proxy, "ListNames",
+        NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
 
     if (error) {
         g_error_free(error);
@@ -175,7 +164,6 @@ static void load_available_players(AppState *state) {
     const gchar *name;
     GPtrArray *player_arr = g_ptr_array_new();
 
-    // Find all MPRIS players (excluding browsers and playerctld)
     while (g_variant_iter_loop(iter, "&s", &name)) {
         if (g_str_has_prefix(name, "org.mpris.MediaPlayer2.") &&
             !is_excluded_player(name) &&
@@ -222,14 +210,8 @@ static void load_available_players(AppState *state) {
 static void save_preferred_player(const gchar *bus_name) {
     gchar *config_dir = g_build_filename(g_get_user_config_dir(), "hyprwave", NULL);
     gchar *pref_file = g_build_filename(config_dir, "preferred_player", NULL);
-    GError *error = NULL;
-
     g_mkdir_with_parents(config_dir, 0755);
-    if (!g_file_set_contents(pref_file, bus_name, -1, &error)) {
-        g_warning("Failed to save preferred player: %s", error->message);
-        g_error_free(error);
-    }
-
+    g_file_set_contents(pref_file, bus_name, -1, NULL);
     g_free(pref_file);
     g_free(config_dir);
 }
@@ -238,16 +220,14 @@ static void save_preferred_player(const gchar *bus_name) {
 static gchar* load_preferred_player(void) {
     gchar *pref_file = g_build_filename(g_get_user_config_dir(), "hyprwave", "preferred_player", NULL);
     gchar *contents = NULL;
-
     if (g_file_get_contents(pref_file, &contents, NULL, NULL)) {
         g_strstrip(contents);
     }
-
     g_free(pref_file);
     return contents;
 }
 
-// Switch to a specific MPRIS player (by D-Bus name)
+// Switch to a specific MPRIS player
 static void switch_to_player(AppState *state, const gchar *bus_name) {
     if (!bus_name) return;
 
@@ -262,15 +242,9 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
 
     GError *error = NULL;
     state->mpris_proxy = g_dbus_proxy_new_for_bus_sync(
-        G_BUS_TYPE_SESSION,
-        G_DBUS_PROXY_FLAGS_NONE,
-        NULL,
-        bus_name,
-        "/org/mpris/MediaPlayer2",
-        "org.mpris.MediaPlayer2.Player",
-        NULL,
-        &error
-    );
+        G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
+        bus_name, "/org/mpris/MediaPlayer2",
+        "org.mpris.MediaPlayer2.Player", NULL, &error);
 
     if (error) {
         g_printerr("Failed to connect to player: %s\n", error->message);
@@ -285,43 +259,30 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
 
     // Get display name from Identity
     GDBusProxy *player_proxy = g_dbus_proxy_new_for_bus_sync(
-        G_BUS_TYPE_SESSION,
-        G_DBUS_PROXY_FLAGS_NONE,
-        NULL,
-        bus_name,
-        "/org/mpris/MediaPlayer2",
-        "org.mpris.MediaPlayer2",
-        NULL,
-        NULL
-    );
+        G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
+        bus_name, "/org/mpris/MediaPlayer2",
+        "org.mpris.MediaPlayer2", NULL, NULL);
 
-    // Set fallback display name from bus_name (e.g., "org.mpris.MediaPlayer2.spotify" -> "spotify")
     g_free(state->player_display_name);
     const gchar *fallback_name = strrchr(bus_name, '.');
     state->player_display_name = g_strdup(fallback_name ? fallback_name + 1 : "Unknown");
 
-    // Try to get better display name from Identity property
     if (player_proxy) {
         GVariant *identity = g_dbus_proxy_get_cached_property(player_proxy, "Identity");
         if (identity) {
-            const gchar *id_str = g_variant_get_string(identity, NULL);
             g_free(state->player_display_name);
-            state->player_display_name = g_strdup(id_str);
+            state->player_display_name = g_strdup(g_variant_get_string(identity, NULL));
             g_variant_unref(identity);
         }
         g_object_unref(player_proxy);
     }
 
-    // Check if player supports seeking (explicit fetch)
+    // Check seeking support
     state->can_seek = FALSE;
-    GError *seek_err = NULL;
-    GVariant *seek_res = g_dbus_proxy_call_sync(
-        state->mpris_proxy,
+    GVariant *seek_res = g_dbus_proxy_call_sync(state->mpris_proxy,
         "org.freedesktop.DBus.Properties.Get",
         g_variant_new("(ss)", "org.mpris.MediaPlayer2.Player", "CanSeek"),
-        G_DBUS_CALL_FLAGS_NONE,
-        -1, NULL, &seek_err
-    );
+        G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL);
     if (seek_res) {
         GVariant *val = NULL;
         g_variant_get(seek_res, "(v)", &val);
@@ -330,8 +291,6 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
             g_variant_unref(val);
         }
         g_variant_unref(seek_res);
-    } else if (seek_err) {
-        g_error_free(seek_err);
     }
 
     // Update display and save preference
@@ -348,14 +307,13 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
     update_playback_status(state);
     state->suppress_notification = FALSE;
 
-    // Update volume control with new player's proxy
+    // Update volume control with new player
     if (state->volume) {
         state->volume->mpris_proxy = state->mpris_proxy;
     }
 }
 
 static void cycle_player(AppState *state, gboolean forward) {
-    // Refresh player list from D-Bus
     load_available_players(state);
 
     if (!state->players || state->player_count == 0) {
@@ -380,174 +338,293 @@ static void on_player_clicked(GtkGestureClick *gesture, gint n_press, gdouble x,
     cycle_player(state, TRUE);
 }
 
-// ========================================
-// SEEK FUNCTIONALITY
-// ========================================
-
-// Perform the actual MPRIS seek call
-static void perform_seek(AppState *state, gdouble fraction) {
-    if (!state->mpris_proxy || state->current_length <= 0)
-        return;
-
-    gint64 target_position = (gint64)(fraction * state->current_length);
-
-    if (state->current_track_id && strlen(state->current_track_id) > 0) {
-        // Use SetPosition with track ID if available
-        g_dbus_proxy_call(state->mpris_proxy, "SetPosition",
-            g_variant_new("(ox)", state->current_track_id, target_position),
-            G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
-    } else {
-        // Fallback: Use relative Seek method
-        // First get current position to calculate offset
-        GError *error = NULL;
-        GVariant *pos_result = g_dbus_proxy_call_sync(
-            state->mpris_proxy,
-            "org.freedesktop.DBus.Properties.Get",
-            g_variant_new("(ss)", "org.mpris.MediaPlayer2.Player", "Position"),
-            G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error
-        );
-
-        if (pos_result && !error) {
-            GVariant *pos_wrapped;
-            g_variant_get(pos_result, "(v)", &pos_wrapped);
-            gint64 current_position = get_variant_as_int64(pos_wrapped);
-            g_variant_unref(pos_wrapped);
-            g_variant_unref(pos_result);
-
-            // Calculate offset and use Seek method
-            gint64 offset = target_position - current_position;
-            g_dbus_proxy_call(state->mpris_proxy, "Seek",
-                g_variant_new("(x)", offset),
-                G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+// FIXED: Smooth contract animation callback
+static void on_revealer_transition_done(GObject *revealer_obj, GParamSpec *pspec, gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    if (!gtk_revealer_get_child_revealed(GTK_REVEALER(revealer_obj))) {
+        // SMOOTH CONTRACT ANIMATION: Set proper control bar size after transition
+        if (state->layout->is_vertical) {
+            gtk_window_set_default_size(GTK_WINDOW(state->window), -1, 60);
+        } else {
+            gtk_window_set_default_size(GTK_WINDOW(state->window), 300, -1);
         }
-        if (error) g_error_free(error);
+        gtk_widget_queue_resize(state->window);
     }
 }
-
-// Debounce timer for seek - waits for user to stop interacting before seeking
-static guint seek_debounce_timer = 0;
-
-// Called after seek delay to allow position updates again
-static gboolean seek_cooldown_complete(gpointer user_data) {
-    AppState *state = (AppState *)user_data;
-    state->is_seeking = FALSE;
-    return G_SOURCE_REMOVE;
-}
-
-// Called after debounce delay to perform the actual seek
-static gboolean perform_seek_debounced(gpointer user_data) {
-    AppState *state = (AppState *)user_data;
-    seek_debounce_timer = 0;
-
-    gdouble fraction = gtk_range_get_value(GTK_RANGE(state->progress_bar));
-    perform_seek(state, fraction);
-
-    // Keep is_seeking TRUE for a bit longer to let the player update its position
-    // This prevents the slider from jumping back to the old position
-    g_timeout_add(500, seek_cooldown_complete, state);
-
-    return G_SOURCE_REMOVE;
-}
-
-// Called when slider value changes (during drag or click)
-static void on_seek_value_changed(GtkRange *range, gpointer user_data) {
-    AppState *state = (AppState *)user_data;
-
-    // If seeking not supported, ignore
-    if (!state->can_seek) return;
-
-    // Mark that user is interacting with the slider
-    state->is_seeking = TRUE;
-
-    // Update time display preview
-    gdouble fraction = gtk_range_get_value(range);
-    if (state->current_length > 0) {
-        gint64 len_seconds = state->current_length / 1000000;
-        gint64 pos_seconds = (gint64)(fraction * len_seconds);
-        gint64 rem_seconds = len_seconds - pos_seconds;
-        if (rem_seconds < 0) rem_seconds = 0;
-        int mins = rem_seconds / 60;
-        int secs = rem_seconds % 60;
-        char time_str[32];
-        snprintf(time_str, sizeof(time_str), "-%d:%02d", mins, secs);
-        gtk_label_set_text(GTK_LABEL(state->time_remaining), time_str);
-    }
-
-    // Cancel previous debounce timer
-    if (seek_debounce_timer > 0) {
-        g_source_remove(seek_debounce_timer);
-    }
-
-    // Schedule seek after 150ms of no changes
-    seek_debounce_timer = g_timeout_add(150, perform_seek_debounced, state);
-}
-
-// ========================================
-// SIGNAL HANDLERS FOR KEYBINDS
-// ========================================
 
 static void on_window_hide_complete(GObject *revealer, GParamSpec *pspec, gpointer user_data) {
     AppState *state = (AppState *)user_data;
-
     if (!gtk_revealer_get_child_revealed(GTK_REVEALER(state->window_revealer))) {
-        // Actually hide the window to make it completely invisible
         gtk_widget_set_visible(state->window, FALSE);
     }
 }
 
 static void handle_sigusr1(int sig) {
     if (!global_state) return;
-    
     global_state->is_visible = !global_state->is_visible;
     
     if (!global_state->is_visible) {
-        // HIDE: Slide out animation
-        // First collapse expanded section if open
+        // HIDE: Just hide visualizer, don't stop audio capture
+        if (global_state->is_idle_mode && global_state->visualizer) {
+            visualizer_hide(global_state->visualizer);
+            // DON'T call visualizer_stop() - keep audio running in background
+        }
+        
+        // Cancel idle timer
+        if (global_state->idle_timer > 0) {
+            g_source_remove(global_state->idle_timer);
+            global_state->idle_timer = 0;
+        }
+        
         if (global_state->is_expanded) {
             global_state->is_expanded = FALSE;
             gtk_revealer_set_reveal_child(GTK_REVEALER(global_state->revealer), FALSE);
         }
-        
-        // Slide out the entire window
         gtk_revealer_set_reveal_child(GTK_REVEALER(global_state->window_revealer), FALSE);
-        
     } else {
-        // SHOW: Slide in animation
-        // Make window visible first, then start reveal animation
+        // SHOW
         gtk_widget_set_visible(global_state->window, TRUE);
         gtk_revealer_set_reveal_child(GTK_REVEALER(global_state->window_revealer), TRUE);
+        
+        // If we were in idle mode before hiding, restore visualizer
+        if (global_state->is_idle_mode && global_state->visualizer) {
+            visualizer_show(global_state->visualizer);
+        }
+        
+        // Restart idle timer when showing (only if not expanded and not in idle mode)
+// Restart idle timer when showing (only if not expanded and not in idle mode)
+        if (!global_state->is_expanded && !global_state->layout->is_vertical && 
+            global_state->visualizer && !global_state->is_idle_mode &&
+            global_state->layout->visualizer_enabled && 
+            global_state->layout->visualizer_idle_timeout > 0) {
+            global_state->idle_timer = g_timeout_add_seconds(global_state->layout->visualizer_idle_timeout, 
+                                                              enter_idle_mode, global_state);
+        }
     }
 }
 
 static void handle_sigusr2(int sig) {
     if (!global_state) return;
     if (!global_state->is_visible) return;
-
-    // Toggle expand by simulating button click
+    
+    // If in idle mode, allow expansion but keep visualizer running
+    if (global_state->is_idle_mode) {
+        // Toggle expansion
+        global_state->is_expanded = !global_state->is_expanded;
+        
+        // Hide volume if collapsing
+        if (!global_state->is_expanded && global_state->volume && global_state->volume->is_showing) {
+            volume_hide(global_state->volume);
+        }
+        
+        if (global_state->is_expanded) {
+            // Cancel idle timer while expanded
+            if (global_state->idle_timer > 0) {
+                g_source_remove(global_state->idle_timer);
+                global_state->idle_timer = 0;
+            }
+        }
+        // Note: We don't hide/show visualizer anymore - it just keeps running
+        
+        // Update expand icon and revealer
+        const gchar *icon_name = layout_get_expand_icon(global_state->layout, global_state->is_expanded);
+        gchar *icon_path = get_icon_path(icon_name);
+        gtk_image_set_from_file(GTK_IMAGE(global_state->expand_icon), icon_path);
+        free_path(icon_path);
+        gtk_revealer_set_reveal_child(GTK_REVEALER(global_state->revealer), global_state->is_expanded);
+        
+        return;
+    }
+    
+    // Normal expand toggle (not in idle mode)
     on_expand_clicked(NULL, global_state);
 }
 
-// ========================================
-// HELPER FUNCTIONS
-// ========================================
+
+
+
+static gboolean animate_button_fade(gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    
+    if (state->is_idle_mode) {
+        // Fade out buttons
+        state->button_fade_opacity -= 0.05;
+        if (state->button_fade_opacity <= 0.0) {
+            state->button_fade_opacity = 0.0;
+            
+            // CRITICAL: Actually HIDE the buttons so they don't block resize
+            gtk_widget_set_visible(state->prev_btn, FALSE);
+            gtk_widget_set_visible(state->play_btn, FALSE);
+            gtk_widget_set_visible(state->next_btn, FALSE);
+            gtk_widget_set_visible(state->expand_btn, FALSE);
+            
+            g_print("  Buttons hidden - bar can now shrink\n");
+            
+            state->morph_timer = 0;
+            return G_SOURCE_REMOVE;
+        }
+    } else {
+        // Make buttons visible first if they were hidden
+        if (state->button_fade_opacity == 0.0) {
+            gtk_widget_set_visible(state->prev_btn, TRUE);
+            gtk_widget_set_visible(state->play_btn, TRUE);
+            gtk_widget_set_visible(state->next_btn, TRUE);
+            gtk_widget_set_visible(state->expand_btn, TRUE);
+            g_print("  Buttons visible again\n");
+        }
+        
+        // Fade in buttons
+        state->button_fade_opacity += 0.05;
+        if (state->button_fade_opacity >= 1.0) {
+            state->button_fade_opacity = 1.0;
+            state->morph_timer = 0;
+            return G_SOURCE_REMOVE;
+        }
+    }
+    
+    // Apply opacity to all buttons
+    gtk_widget_set_opacity(state->prev_btn, state->button_fade_opacity);
+    gtk_widget_set_opacity(state->play_btn, state->button_fade_opacity);
+    gtk_widget_set_opacity(state->next_btn, state->button_fade_opacity);
+    gtk_widget_set_opacity(state->expand_btn, state->button_fade_opacity);
+    
+    return G_SOURCE_CONTINUE;
+}
+
+// Enter idle mode - morph to visualizer
+// REPLACE enter_idle_mode with this:
+// REPLACE enter_idle_mode with this:
+// Helper function for delayed resize
+static gboolean delayed_control_bar_resize(gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    gtk_widget_set_size_request(state->control_bar_container, 280, 32);
+    gtk_widget_queue_resize(state->control_bar_container);
+    g_print("  Size request set to: 280x32 (after button fade)\n");
+    return G_SOURCE_REMOVE;
+}
+
+// REPLACE enter_idle_mode with this:
+static gboolean enter_idle_mode(gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    
+    // Don't enter idle mode if not visible, expanded, or in vertical layout
+    if (state->is_idle_mode || !state->is_visible || state->is_expanded || 
+        state->layout->is_vertical || !state->visualizer) {
+        return G_SOURCE_REMOVE;
+    }
+    
+    g_print("→ Entering idle mode - morphing to visualizer\n");
+    state->is_idle_mode = TRUE;
+    
+    // Hide volume if showing
+    if (state->volume && state->volume->is_showing) {
+        volume_hide(state->volume);
+    }
+    
+    // Debug: Print current size
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(state->control_bar_container, &alloc);
+    g_print("  Before morph: %dx%d\n", alloc.width, alloc.height);
+    
+    // Start button fade-out animation FIRST
+    // The animation will hide buttons when opacity reaches 0
+    if (state->morph_timer > 0) {
+        g_source_remove(state->morph_timer);
+    }
+    state->morph_timer = g_timeout_add(16, animate_button_fade, state);  // ~60fps
+    
+    // Start audio capture and show visualizer
+    if (!state->visualizer->is_running) {
+        visualizer_start(state->visualizer);
+    }
+    visualizer_show(state->visualizer);
+    
+    // Resize AFTER buttons fade (350ms delay)
+    // This lets buttons hide first, then bar can shrink
+    g_timeout_add(350, delayed_control_bar_resize, state);
+    
+    state->idle_timer = 0;
+    return G_SOURCE_REMOVE;
+}
+
+static void exit_idle_mode(AppState *state) {
+    if (!state->is_idle_mode || !state->visualizer) return;
+    
+    g_print("← Exiting idle mode - restoring buttons\n");
+    state->is_idle_mode = FALSE;
+    
+    // Debug: Print current size
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(state->control_bar_container, &alloc);
+    g_print("  Before restore: %dx%d\n", alloc.width, alloc.height);
+    
+    // Restore control bar: 280x32 → 240x60 (NARROWER + TALLER)
+    gtk_widget_set_size_request(state->control_bar_container, 240, 60);
+    
+    // Force update
+    gtk_widget_queue_resize(state->control_bar_container);
+    gtk_widget_queue_allocate(state->control_bar_container);
+    
+    g_print("  Size request set to: 240x60\n");
+    
+    // Hide visualizer
+    visualizer_hide(state->visualizer);
+    
+    // Start button fade-in animation
+    if (state->morph_timer > 0) {
+        g_source_remove(state->morph_timer);
+    }
+    state->morph_timer = g_timeout_add(16, animate_button_fade, state);  // ~60fps
+    
+// Restart idle timer (directly, not via reset_idle_timer)
+    if (state->is_visible && !state->is_expanded && !state->layout->is_vertical && 
+        state->visualizer && state->layout->visualizer_enabled && 
+        state->layout->visualizer_idle_timeout > 0) {
+        state->idle_timer = g_timeout_add_seconds(state->layout->visualizer_idle_timeout, 
+                                                   enter_idle_mode, state);
+    }
+}
+
+static void reset_idle_timer(AppState *state) {
+    // Cancel existing timer
+    if (state->idle_timer > 0) {
+        g_source_remove(state->idle_timer);
+        state->idle_timer = 0;
+    }
+    
+    // Exit idle mode if currently in it (restore buttons)
+    // This function is only called by on_mouse_motion
+    if (state->is_idle_mode) {
+        exit_idle_mode(state);
+        return; // exit_idle_mode will restart the timer
+    }
+    
+    // Start new idle timer (only if visualizer enabled, timeout > 0, visible, not expanded, horizontal)
+    if (state->is_visible && !state->is_expanded && 
+        !state->layout->is_vertical && state->visualizer &&
+        state->layout->visualizer_enabled && state->layout->visualizer_idle_timeout > 0) {
+        state->idle_timer = g_timeout_add_seconds(state->layout->visualizer_idle_timeout, 
+                                                   enter_idle_mode, state);
+    }
+}
+
+// Mouse motion handler (for detecting user activity)
+static gboolean on_mouse_motion(GtkEventControllerMotion *controller,
+                                 gdouble x, gdouble y,
+                                 gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    reset_idle_timer(state);
+    return FALSE;
+}
+
 
 static gint64 get_variant_as_int64(GVariant *value) {
     if (value == NULL) return 0;
-    if (g_variant_is_of_type(value, G_VARIANT_TYPE_INT64)) {
-        return g_variant_get_int64(value);
-    } 
-    else if (g_variant_is_of_type(value, G_VARIANT_TYPE_UINT64)) {
-        return (gint64)g_variant_get_uint64(value);
-    }
-    else if (g_variant_is_of_type(value, G_VARIANT_TYPE_INT32)) {
-        return (gint64)g_variant_get_int32(value);
-    }
-    else if (g_variant_is_of_type(value, G_VARIANT_TYPE_UINT32)) {
-        return (gint64)g_variant_get_uint32(value);
-    }
-    else if (g_variant_is_of_type(value, G_VARIANT_TYPE_DOUBLE)) {
-        return (gint64)g_variant_get_double(value);
-    }
+    if (g_variant_is_of_type(value, G_VARIANT_TYPE_INT64)) return g_variant_get_int64(value);
+    else if (g_variant_is_of_type(value, G_VARIANT_TYPE_UINT64)) return (gint64)g_variant_get_uint64(value);
+    else if (g_variant_is_of_type(value, G_VARIANT_TYPE_INT32)) return (gint64)g_variant_get_int32(value);
+    else if (g_variant_is_of_type(value, G_VARIANT_TYPE_UINT32)) return (gint64)g_variant_get_uint32(value);
+    else if (g_variant_is_of_type(value, G_VARIANT_TYPE_DOUBLE)) return (gint64)g_variant_get_double(value);
     return 0;
 }
 
@@ -557,50 +634,130 @@ static gboolean update_position_tick(gpointer user_data) {
     return G_SOURCE_CONTINUE;
 }
 
-static void update_position(AppState *state) {
+static gboolean clear_seeking_flag(gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    state->is_seeking = FALSE;
+    return G_SOURCE_REMOVE;
+}
+
+static void perform_seek(AppState *state, gdouble fraction) {
     if (!state->mpris_proxy) return;
+    
+    GVariant *metadata = g_dbus_proxy_get_cached_property(state->mpris_proxy, "Metadata");
+    if (!metadata) return;
+    
+    gint64 length = 0;
+    const gchar *track_id = NULL;
+    GVariantIter iter;
+    gchar *key;
+    GVariant *val;
 
-    // Don't update position while user is seeking
-    if (state->is_seeking) return;
+    g_variant_iter_init(&iter, metadata);
+    while (g_variant_iter_loop(&iter, "{sv}", &key, &val)) {
+        if (g_strcmp0(key, "mpris:length") == 0) {
+            length = get_variant_as_int64(val);
+        } else if (g_strcmp0(key, "mpris:trackid") == 0) {
+            track_id = g_variant_get_string(val, NULL);
+        }
+    }
 
+    if (length > 0 && track_id) {
+        gint64 target_position = (gint64)(fraction * length);
+        g_dbus_proxy_call(state->mpris_proxy, "SetPosition",
+            g_variant_new("(ox)", track_id, target_position),
+            G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+        g_print("Seeking to %.1f%% (position: %ld µs)\n", fraction * 100, target_position);
+    }
+    g_variant_unref(metadata);
+}
+
+static void on_change_value(GtkRange *range, GtkScrollType scroll, gdouble value, gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    state->is_seeking = TRUE;
+    
+    if (state->mpris_proxy) {
+        GVariant *metadata = g_dbus_proxy_get_cached_property(state->mpris_proxy, "Metadata");
+        if (metadata) {
+            gint64 length = 0;
+            GVariantIter iter;
+            gchar *key;
+            GVariant *val;
+            
+            g_variant_iter_init(&iter, metadata);
+            while (g_variant_iter_loop(&iter, "{sv}", &key, &val)) {
+                if (g_strcmp0(key, "mpris:length") == 0) {
+                    length = get_variant_as_int64(val);
+                    break;
+                }
+            }
+            g_variant_unref(metadata);
+
+            if (length > 0) {
+                gint64 target_pos = (gint64)(value * length);
+                gint64 pos_seconds = target_pos / 1000000;
+                gint64 len_seconds = length / 1000000;
+                gint64 rem_seconds = len_seconds - pos_seconds;
+                
+                char time_str[32];
+                if (rem_seconds >= 0) {
+                    snprintf(time_str, sizeof(time_str), "-%ld:%02ld", 
+                            rem_seconds / 60, rem_seconds % 60);
+                } else {
+                    snprintf(time_str, sizeof(time_str), "%ld:%02ld", 
+                            pos_seconds / 60, pos_seconds % 60);
+                }
+                gtk_label_set_text(GTK_LABEL(state->time_remaining), time_str);
+            }
+        }
+    }
+}
+
+static gboolean on_button_release_event(GtkWidget *widget, GdkEvent *event, gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    
+    if (gdk_event_get_event_type(event) != GDK_BUTTON_RELEASE) {
+        return FALSE;
+    }
+    
+    gdouble value = gtk_range_get_value(GTK_RANGE(state->progress_bar));
+    g_print("Button released - seeking to %.1f%%\n", value * 100);
+    perform_seek(state, value);
+    g_timeout_add(500, clear_seeking_flag, state);
+    
+    return FALSE;
+}
+
+static void on_position_received(GObject *source_object, GAsyncResult *res, gpointer user_data) {
+    AppState *state = (AppState *)user_data;
     GError *error = NULL;
-    GVariant *position_container = g_dbus_proxy_call_sync(
-        state->mpris_proxy,
-        "org.freedesktop.DBus.Properties.Get",
-        g_variant_new("(ss)", "org.mpris.MediaPlayer2.Player", "Position"),
-        G_DBUS_CALL_FLAGS_NONE,
-        -1, NULL, &error
-    );
-
+    
+    GVariant *position_container = g_dbus_proxy_call_finish(G_DBUS_PROXY(source_object), res, &error);
     if (error) {
         g_error_free(error);
         return;
     }
-
+    
     GVariant *position_val_wrapped;
     g_variant_get(position_container, "(v)", &position_val_wrapped);
     gint64 position = get_variant_as_int64(position_val_wrapped);
     g_variant_unref(position_val_wrapped);
     g_variant_unref(position_container);
-
-    gint64 length = state->current_length;
-    if (length <= 0) {
-        // Fallback: try to get length from metadata if not cached
-        GVariant *metadata_var = g_dbus_proxy_get_cached_property(state->mpris_proxy, "Metadata");
-        if (metadata_var) {
-            GVariantIter iter;
-            gchar *key;
-            GVariant *val;
-            g_variant_iter_init(&iter, metadata_var);
-            while (g_variant_iter_loop(&iter, "{sv}", &key, &val)) {
-                if (g_strcmp0(key, "mpris:length") == 0) {
-                    length = get_variant_as_int64(val);
-                    state->current_length = length;
-                    break;
-                }
+    
+    gint64 length = 0;
+    GVariant *metadata_var = g_dbus_proxy_get_cached_property(state->mpris_proxy, "Metadata");
+    
+    if (metadata_var) {
+        GVariantIter iter;
+        gchar *key;
+        GVariant *val;
+        g_variant_iter_init(&iter, metadata_var);
+        while (g_variant_iter_loop(&iter, "{sv}", &key, &val)) {
+            if (g_strcmp0(key, "mpris:length") == 0) {
+                length = get_variant_as_int64(val);
+                break;
             }
-            g_variant_unref(metadata_var);
         }
+        g_variant_unref(metadata_var);
     }
 
     char time_str[32];
@@ -626,46 +783,41 @@ static void update_position(AppState *state) {
     if (fraction < 0.0) fraction = 0.0;
 
     gtk_label_set_text(GTK_LABEL(state->time_remaining), time_str);
-
-    // Block signal handler to prevent triggering seek during programmatic update
-    if (state->seek_handler_id > 0) {
-        g_signal_handler_block(state->progress_bar, state->seek_handler_id);
-    }
+    g_signal_handlers_block_by_func(state->progress_bar, on_change_value, state);
     gtk_range_set_value(GTK_RANGE(state->progress_bar), fraction);
-    if (state->seek_handler_id > 0) {
-        g_signal_handler_unblock(state->progress_bar, state->seek_handler_id);
-    }
+    g_signal_handlers_unblock_by_func(state->progress_bar, on_change_value, state);
 }
 
-// Track notification retry count
+static void update_position(AppState *state) {
+    if (state->is_seeking) return;
+    if (!state->mpris_proxy) return;
+    
+    g_dbus_proxy_call(state->mpris_proxy,
+        "org.freedesktop.DBus.Properties.Get",
+        g_variant_new("(ss)", "org.mpris.MediaPlayer2.Player", "Position"),
+        G_DBUS_CALL_FLAGS_NONE, -1, NULL, on_position_received, state);
+}
+
 static gint notification_retry_count = 0;
 #define MAX_NOTIFICATION_RETRIES 5
 
-// Debounced notification callback - shows notification after delay
 static gboolean show_pending_notification(gpointer user_data) {
     AppState *state = (AppState *)user_data;
-
     gboolean has_title = state->pending_title && strlen(state->pending_title) > 0;
     gboolean has_artist = state->pending_artist && strlen(state->pending_artist) > 0;
 
-    // Wait for at least title and artist, retry if not ready yet
     if (!has_title || !has_artist) {
         notification_retry_count++;
         if (notification_retry_count < MAX_NOTIFICATION_RETRIES) {
-            // Reschedule - keep timer ID updated
             state->notification_timer = g_timeout_add(200, show_pending_notification, state);
             return G_SOURCE_REMOVE;
         }
+        g_print("Notification skipped - metadata incomplete\n");
     } else {
-        // We have complete data - show notification
-        notification_show(state->notification,
-                          state->pending_title,
-                          state->pending_artist,
-                          state->pending_art_url,
-                          "Now Playing");
+        notification_show(state->notification, state->pending_title,
+                          state->pending_artist, state->pending_art_url, "Now Playing");
     }
 
-    // Clear pending data and reset
     g_free(state->pending_title);
     g_free(state->pending_artist);
     g_free(state->pending_art_url);
@@ -674,27 +826,21 @@ static gboolean show_pending_notification(gpointer user_data) {
     state->pending_art_url = NULL;
     state->notification_timer = 0;
     notification_retry_count = 0;
-
     return G_SOURCE_REMOVE;
 }
 
 static void update_metadata(AppState *state) {
     if (!state->mpris_proxy) return;
-
     GVariant *metadata = g_dbus_proxy_get_cached_property(state->mpris_proxy, "Metadata");
     if (!metadata) return;
 
     GVariantIter iter;
     GVariant *value;
     gchar *key;
-
-    // Use owned copies since g_variant_iter_loop frees data each iteration
     gchar *title = NULL;
     gchar *artist = NULL;
     gchar *art_url = NULL;
     gchar *track_id = NULL;
-    gint64 length = 0;
-    gint64 bitrate = 0;
 
     g_variant_iter_init(&iter, metadata);
     while (g_variant_iter_loop(&iter, "{sv}", &key, &value)) {
@@ -704,9 +850,9 @@ static void update_metadata(AppState *state) {
         }
         else if (g_strcmp0(key, "xesam:artist") == 0) {
             if (g_variant_is_of_type(value, G_VARIANT_TYPE_STRING_ARRAY)) {
-                gsize arr_length;
-                const gchar **artists = g_variant_get_strv(value, &arr_length);
-                if (arr_length > 0) {
+                gsize length;
+                const gchar **artists = g_variant_get_strv(value, &length);
+                if (length > 0) {
                     g_free(artist);
                     artist = g_strdup(artists[0]);
                 }
@@ -721,88 +867,38 @@ static void update_metadata(AppState *state) {
             g_free(track_id);
             track_id = g_strdup(g_variant_get_string(value, NULL));
         }
-        else if (g_strcmp0(key, "mpris:length") == 0) {
-            length = get_variant_as_int64(value);
-        }
-        else if (g_strcmp0(key, "xesam:audioBitrate") == 0) {
-            bitrate = get_variant_as_int64(value);
-        }
     }
-
-    // Store track info for seek operations
-    if (track_id) {
-        g_free(state->current_track_id);
-        state->current_track_id = g_strdup(track_id);
-    }
-    state->current_length = length;
     
-    // Check if track changed for notification
-    // Use track_id OR title change (fallback for buggy MPRIS bridges like roon-mpris)
     gboolean track_changed = FALSE;
     if (track_id && state->last_track_id) {
         track_changed = (g_strcmp0(track_id, state->last_track_id) != 0);
     } else if (track_id && !state->last_track_id) {
         track_changed = TRUE;
     }
-
-    // Fallback: also check title change if track_id stayed same
-    // (workaround for MPRIS bridges that don't update track_id properly)
-    if (!track_changed && title && state->last_title) {
-        track_changed = (g_strcmp0(title, state->last_title) != 0);
-    }
-
-    // Update last track ID and title
+    
     if (track_id) {
         g_free(state->last_track_id);
         state->last_track_id = g_strdup(track_id);
     }
-    if (title) {
-        g_free(state->last_title);
-        state->last_title = g_strdup(title);
-    }
-    // Handle notification with debounce
-    if (state->layout->notifications_enabled &&
-        state->layout->now_playing_enabled && state->notification) {
-
-        if (track_changed && !state->suppress_notification) {
-            // New track - cancel any pending notification and schedule new one
-            if (state->notification_timer > 0) {
-                g_source_remove(state->notification_timer);
-                state->notification_timer = 0;
-            }
-
-            // Reset retry count for new track
-            notification_retry_count = 0;
-
-            // Store pending notification data (make copies)
-            g_free(state->pending_title);
-            g_free(state->pending_artist);
-            g_free(state->pending_art_url);
-            state->pending_title = g_strdup(title);
-            state->pending_artist = g_strdup(artist);
-            state->pending_art_url = g_strdup(art_url);
-
-            // Pre-load notification album art NOW before temp file gets deleted
-            // (Chromium uses ephemeral temp files that disappear quickly)
-            if (state->notification->album_cover) {
-                // Clear old art first, then try to load new art
-                clear_album_art_container(state->notification->album_cover);
-                load_album_art_to_container(art_url, state->notification->album_cover, 70);
-            }
-
-            // Schedule notification after 300ms delay to ensure metadata is complete
-            state->notification_timer = g_timeout_add(300, show_pending_notification, state);
-
-        } else if (state->notification_timer > 0) {
-            // Same track but notification pending - update with latest data
-            // This handles the case where metadata arrives in multiple signals
-            g_free(state->pending_title);
-            g_free(state->pending_artist);
-            g_free(state->pending_art_url);
-            state->pending_title = g_strdup(title);
-            state->pending_artist = g_strdup(artist);
-            state->pending_art_url = g_strdup(art_url);
+    
+    if (state->layout->notifications_enabled && state->layout->now_playing_enabled && 
+        state->notification && track_changed) {
+        if (state->notification_timer > 0) {
+            g_source_remove(state->notification_timer);
+            state->notification_timer = 0;
         }
+        notification_retry_count = 0;
+        g_free(state->pending_title);
+        g_free(state->pending_artist);
+        g_free(state->pending_art_url);
+        state->pending_title = g_strdup(title);
+        state->pending_artist = g_strdup(artist);
+        state->pending_art_url = g_strdup(art_url);
+        if (state->notification->album_cover) {
+            clear_album_art_container(state->notification->album_cover);
+            load_album_art_to_container(art_url, state->notification->album_cover, 70);
+        }
+        state->notification_timer = g_timeout_add(300, show_pending_notification, state);
     }
     
     if (title && strlen(title) > 0) {
@@ -814,34 +910,23 @@ static void update_metadata(AppState *state) {
     if (artist && strlen(artist) > 0) {
         gtk_label_set_text(GTK_LABEL(state->artist_label), artist);
     } else {
-        const gchar *current = gtk_label_get_text(GTK_LABEL(state->artist_label));
-        if (g_strcmp0(current, "Unknown Artist") == 0 || strlen(current) == 0) {
-            gtk_label_set_text(GTK_LABEL(state->artist_label), "Unknown Artist");
-        }
+        gtk_label_set_text(GTK_LABEL(state->artist_label), "Unknown Artist");
     }
     
-    // Handle album art using shared utility
     load_album_art_to_container(art_url, state->album_cover, 120);
     
-    // Set source (player name)
     if (state->current_player) {
         GError *error = NULL;
         GDBusProxy *player_proxy = g_dbus_proxy_new_for_bus_sync(
-            G_BUS_TYPE_SESSION,
-            G_DBUS_PROXY_FLAGS_NONE,
-            NULL,
-            state->current_player,
-            "/org/mpris/MediaPlayer2",
-            "org.mpris.MediaPlayer2",
-            NULL,
-            &error
-        );
+            G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
+            state->current_player, "/org/mpris/MediaPlayer2",
+            "org.mpris.MediaPlayer2", NULL, &error);
 
         if (player_proxy && !error) {
             GVariant *identity = g_dbus_proxy_get_cached_property(player_proxy, "Identity");
             if (identity) {
-                const gchar *player_name = g_variant_get_string(identity, NULL);
-                gtk_label_set_text(GTK_LABEL(state->source_label), player_name);
+                gtk_label_set_text(GTK_LABEL(state->source_label), 
+                                   g_variant_get_string(identity, NULL));
                 g_variant_unref(identity);
             }
             g_object_unref(player_proxy);
@@ -850,227 +935,75 @@ static void update_metadata(AppState *state) {
         }
     }
 
-    // Update format/bitrate label
-    if (state->format_label) {
-        if (bitrate > 0) {
-            // Bitrate is in bps, convert to kbps for display
-            gint kbps = (gint)(bitrate / 1000);
-            gchar *format_str = g_strdup_printf("%d kbps", kbps);
-            gtk_label_set_text(GTK_LABEL(state->format_label), format_str);
-            g_free(format_str);
-            gtk_widget_set_visible(state->format_label, TRUE);
-        } else {
-            // No bitrate info available - hide the label
-            gtk_widget_set_visible(state->format_label, FALSE);
-        }
-    }
-
-    // Cleanup allocated strings
     g_free(title);
     g_free(artist);
     g_free(art_url);
     g_free(track_id);
-
     g_variant_unref(metadata);
     update_position(state);
 }
 
-// Update play button icon based on current playback status
 static void update_playback_status(AppState *state) {
     if (!state->mpris_proxy) return;
-
     GVariant *status_var = g_dbus_proxy_get_cached_property(state->mpris_proxy, "PlaybackStatus");
     if (status_var) {
         const gchar *status = g_variant_get_string(status_var, NULL);
         state->is_playing = g_strcmp0(status, "Playing") == 0;
-
-        if (state->is_playing) {
-            gchar *icon_path = get_icon_path("pause.svg");
-            gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
-            free_path(icon_path);
-            // Add playing animation
-            if (state->play_button) {
-                gtk_widget_add_css_class(state->play_button, "playing");
-            }
-        } else {
-            gchar *icon_path = get_icon_path("play.svg");
-            gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
-            free_path(icon_path);
-            // Remove playing animation
-            if (state->play_button) {
-                gtk_widget_remove_css_class(state->play_button, "playing");
-            }
-        }
+        gchar *icon_path = get_icon_path(state->is_playing ? "pause.svg" : "play.svg");
+        gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
+        free_path(icon_path);
         g_variant_unref(status_var);
     }
-}
-
-static gboolean refresh_playback_status(gpointer user_data) {
-    AppState *state = (AppState *)user_data;
-    if (!state->mpris_proxy) return G_SOURCE_REMOVE;
-
-    // Force fetch PlaybackStatus via D-Bus call (bypass cache)
-    GError *error = NULL;
-    GVariant *result = g_dbus_proxy_call_sync(
-        state->mpris_proxy,
-        "org.freedesktop.DBus.Properties.Get",
-        g_variant_new("(ss)", "org.mpris.MediaPlayer2.Player", "PlaybackStatus"),
-        G_DBUS_CALL_FLAGS_NONE,
-        -1, NULL, &error
-    );
-
-    if (result) {
-        GVariant *value = NULL;
-        g_variant_get(result, "(v)", &value);
-        if (value) {
-            const gchar *status = g_variant_get_string(value, NULL);
-            state->is_playing = g_strcmp0(status, "Playing") == 0;
-
-            if (state->is_playing) {
-                gchar *icon_path = get_icon_path("pause.svg");
-                gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
-                free_path(icon_path);
-                if (state->play_button) {
-                    gtk_widget_add_css_class(state->play_button, "playing");
-                }
-            } else {
-                gchar *icon_path = get_icon_path("play.svg");
-                gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
-                free_path(icon_path);
-                if (state->play_button) {
-                    gtk_widget_remove_css_class(state->play_button, "playing");
-                }
-            }
-            g_variant_unref(value);
-        }
-        g_variant_unref(result);
-    } else if (error) {
-        g_error_free(error);
-    }
-
-    return G_SOURCE_REMOVE;
 }
 
 static void on_properties_changed(GDBusProxy *proxy, GVariant *changed_properties,
                                   GStrv invalidated_properties, gpointer user_data) {
     AppState *state = (AppState *)user_data;
     update_metadata(state);
-    // Use explicit fetch instead of cached properties for reliable status
-    refresh_playback_status(state);
+    update_playback_status(state);
 }
 
 static void connect_to_player(AppState *state, const gchar *bus_name) {
-    if (state->mpris_proxy) {
-        g_object_unref(state->mpris_proxy);
-    }
-
+    if (state->mpris_proxy) g_object_unref(state->mpris_proxy);
     g_free(state->current_player);
     state->current_player = g_strdup(bus_name);
 
     GError *error = NULL;
     state->mpris_proxy = g_dbus_proxy_new_for_bus_sync(
-        G_BUS_TYPE_SESSION,
-        G_DBUS_PROXY_FLAGS_NONE,
-        NULL,
-        bus_name,
-        "/org/mpris/MediaPlayer2",
-        "org.mpris.MediaPlayer2.Player",
-        NULL,
-        &error
-    );
+        G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL, bus_name,
+        "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", NULL, &error);
 
     if (error) {
-        g_printerr("Failed to connect to player: %s\n", error->message);
+        g_printerr("Failed to connect: %s\n", error->message);
         g_error_free(error);
         return;
     }
 
     g_signal_connect(state->mpris_proxy, "g-properties-changed",
                      G_CALLBACK(on_properties_changed), state);
-
-    // Get display name from Identity for all players
-    GDBusProxy *player_proxy = g_dbus_proxy_new_for_bus_sync(
-        G_BUS_TYPE_SESSION,
-        G_DBUS_PROXY_FLAGS_NONE,
-        NULL,
-        bus_name,
-        "/org/mpris/MediaPlayer2",
-        "org.mpris.MediaPlayer2",
-        NULL,
-        NULL
-    );
-
-    if (player_proxy) {
-        GVariant *identity = g_dbus_proxy_get_cached_property(player_proxy, "Identity");
-        if (identity) {
-            const gchar *id_str = g_variant_get_string(identity, NULL);
-            g_free(state->player_display_name);
-            state->player_display_name = g_strdup(id_str);
-            if (state->player_label) {
-                gtk_label_set_text(GTK_LABEL(state->player_label), state->player_display_name);
-            }
-            g_variant_unref(identity);
-        }
-        g_object_unref(player_proxy);
-    }
-
-    // Check if player supports seeking (explicit fetch, don't rely on cache)
-    state->can_seek = FALSE;
-    GError *seek_error = NULL;
-    GVariant *seek_result = g_dbus_proxy_call_sync(
-        state->mpris_proxy,
-        "org.freedesktop.DBus.Properties.Get",
-        g_variant_new("(ss)", "org.mpris.MediaPlayer2.Player", "CanSeek"),
-        G_DBUS_CALL_FLAGS_NONE,
-        -1, NULL, &seek_error
-    );
-    if (seek_result) {
-        GVariant *seek_value = NULL;
-        g_variant_get(seek_result, "(v)", &seek_value);
-        if (seek_value) {
-            state->can_seek = g_variant_get_boolean(seek_value);
-            g_variant_unref(seek_value);
-        }
-        g_variant_unref(seek_result);
-    } else if (seek_error) {
-        g_error_free(seek_error);
-    }
-    g_print("CanSeek: %s\n", state->can_seek ? "true" : "false");
-
-    // Suppress notification on initial connection
-    state->suppress_notification = TRUE;
     update_metadata(state);
-    update_playback_status(state);
-    state->suppress_notification = FALSE;
+    
+    if (state->volume) {
+        state->volume->mpris_proxy = state->mpris_proxy;
+    }
+    
     g_print("Connected to player: %s\n", bus_name);
 }
 
 static void find_active_player(AppState *state) {
     GError *error = NULL;
     GDBusProxy *dbus_proxy = g_dbus_proxy_new_for_bus_sync(
-        G_BUS_TYPE_SESSION,
-        G_DBUS_PROXY_FLAGS_NONE,
-        NULL,
-        "org.freedesktop.DBus",
-        "/org/freedesktop/DBus",
-        "org.freedesktop.DBus",
-        NULL,
-        &error
-    );
+        G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
+        "org.freedesktop.DBus", "/org/freedesktop/DBus",
+        "org.freedesktop.DBus", NULL, &error);
 
     if (error) {
         g_error_free(error);
         return;
     }
 
-    GVariant *result = g_dbus_proxy_call_sync(
-        dbus_proxy,
-        "ListNames",
-        NULL,
-        G_DBUS_CALL_FLAGS_NONE,
-        -1, NULL, &error
-    );
-
+    GVariant *result = g_dbus_proxy_call_sync(dbus_proxy, "ListNames", NULL,
+                                              G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
     if (error) {
         g_error_free(error);
         g_object_unref(dbus_proxy);
@@ -1079,41 +1012,13 @@ static void find_active_player(AppState *state) {
 
     GVariantIter *iter;
     g_variant_get(result, "(as)", &iter);
-
     const gchar *name;
-    gchar *first_player = NULL;
-    gchar *preferred_player = load_preferred_player();
-
-    // Find MPRIS players
     while (g_variant_iter_loop(iter, "&s", &name)) {
-        if (g_str_has_prefix(name, "org.mpris.MediaPlayer2.") &&
-            !is_excluded_player(name) &&
-            is_allowed_chromium_player(name)) {
-            // Check for preferred player first
-            if (preferred_player && g_strcmp0(name, preferred_player) == 0) {
-                connect_to_player(state, name);
-                g_variant_iter_free(iter);
-                g_variant_unref(result);
-                g_object_unref(dbus_proxy);
-                g_free(preferred_player);
-                g_free(first_player);
-                return;
-            }
-            // Remember first valid player as fallback
-            if (!first_player) {
-                first_player = g_strdup(name);
-            }
+        if (g_str_has_prefix(name, "org.mpris.MediaPlayer2.")) {
+            connect_to_player(state, name);
+            break;
         }
     }
-
-    g_free(preferred_player);
-
-    // Use first available player if no preferred found
-    if (first_player) {
-        connect_to_player(state, first_player);
-        g_free(first_player);
-    }
-
     g_variant_iter_free(iter);
     g_variant_unref(result);
     g_object_unref(dbus_proxy);
@@ -1121,12 +1026,10 @@ static void find_active_player(AppState *state) {
 
 static void on_play_clicked(GtkButton *button, gpointer user_data) {
     AppState *state = (AppState *)user_data;
-    
     if (!state->mpris_proxy) {
         find_active_player(state);
         return;
     }
-    
     g_dbus_proxy_call(state->mpris_proxy, "PlayPause", NULL,
                       G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
 }
@@ -1134,7 +1037,6 @@ static void on_play_clicked(GtkButton *button, gpointer user_data) {
 static void on_prev_clicked(GtkButton *button, gpointer user_data) {
     AppState *state = (AppState *)user_data;
     if (!state->mpris_proxy) return;
-    
     g_dbus_proxy_call(state->mpris_proxy, "Previous", NULL,
                       G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
 }
@@ -1142,62 +1044,91 @@ static void on_prev_clicked(GtkButton *button, gpointer user_data) {
 static void on_next_clicked(GtkButton *button, gpointer user_data) {
     AppState *state = (AppState *)user_data;
     if (!state->mpris_proxy) return;
-    
     g_dbus_proxy_call(state->mpris_proxy, "Next", NULL,
                       G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
 }
 
-static void on_revealer_transition_done(GObject *revealer, GParamSpec *pspec, gpointer user_data) {
-    AppState *state = (AppState *)user_data;
-    
-    if (!state->is_expanded) {
-        gtk_window_set_default_size(GTK_WINDOW(state->window), 1, 1);
-        gtk_widget_queue_resize(state->window);
-    }
-}
-
-// Double-click on album cover toggles volume control
-static void on_album_cover_clicked(GtkGestureClick *gesture, gint n_press, gdouble x, gdouble y, gpointer user_data) {
-    AppState *state = (AppState *)user_data;
-
-    // Only respond to double-click
-    if (n_press != 2) return;
-
-    if (!state->volume) return;
-
-    // Don't show volume control if player doesn't support it
-    if (!volume_is_supported(state->volume)) return;
-
-    if (state->volume->is_showing) {
-        volume_hide(state->volume);
-    } else {
-        volume_show(state->volume);
-    }
-}
-
 static void on_expand_clicked(GtkButton *button, gpointer user_data) {
     AppState *state = (AppState *)user_data;
+    
+    // SAFETY: Don't process if already transitioning
+    if (state->morph_timer > 0) {
+        g_print("⸻ Expand blocked - morph animation in progress\n");
+        return;
+    }
+    
+    // Exit idle mode first if active (mouse click path)
+    if (state->is_idle_mode) {
+        exit_idle_mode(state);
+        // Don't toggle expansion while exiting idle mode
+        return;
+    }
+    
     state->is_expanded = !state->is_expanded;
-
-    // Update icon using layout helper
+    
+    if (!state->is_expanded && state->volume && state->volume->is_showing) {
+        volume_hide(state->volume);
+    }
+    
     const gchar *icon_name = layout_get_expand_icon(state->layout, state->is_expanded);
     gchar *icon_path = get_icon_path(icon_name);
     gtk_image_set_from_file(GTK_IMAGE(state->expand_icon), icon_path);
     free_path(icon_path);
-
-    // Hide volume when collapsing
-    if (!state->is_expanded && state->volume && state->volume->is_showing) {
-        volume_hide(state->volume);
-    }
-
     gtk_revealer_set_reveal_child(GTK_REVEALER(state->revealer), state->is_expanded);
+    
+    // MANAGE IDLE TIMER:
+    if (state->is_expanded) {
+        // Cancel idle timer when expanded
+        if (state->idle_timer > 0) {
+            g_source_remove(state->idle_timer);
+            state->idle_timer = 0;
+        }
+    } else {
+        // Restart idle timer when collapsed (direct, not via reset_idle_timer)
+        if (state->is_visible && !state->layout->is_vertical && state->visualizer &&
+            state->layout->visualizer_enabled && state->layout->visualizer_idle_timeout > 0) {
+            state->idle_timer = g_timeout_add_seconds(state->layout->visualizer_idle_timeout, 
+                                                       enter_idle_mode, state);
+        }
+    }
+}
+
+static void on_album_double_click(GtkGestureClick *gesture,
+                                   int n_press,
+                                   double x, double y,
+                                   gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    
+    if (n_press == 2 && state->volume) {
+        if (state->volume->is_showing) {
+            volume_hide(state->volume);
+            g_print("Volume control hidden via double-click\n");
+        } else {
+            volume_show(state->volume);
+            g_print("Volume control activated via double-click\n");
+        }
+    }
+}
+
+static gboolean enable_smooth_transitions(gpointer user_data) {
+    GtkWidget *window_revealer = GTK_WIDGET(user_data);
+    gtk_revealer_set_transition_duration(GTK_REVEALER(window_revealer), 300);
+    g_print("Smooth transitions enabled\n");
+    return G_SOURCE_REMOVE;
+}
+
+static void on_volume_visibility_changed(GObject *revealer, GParamSpec *pspec, gpointer user_data) {
+    AppState *state = (AppState *)user_data;
+    
+    if (!state->layout->is_vertical && state->expanded_with_volume) {
+        gtk_widget_queue_resize(state->expanded_with_volume);
+        gtk_widget_queue_allocate(state->expanded_with_volume);
+    }
 }
 
 static void load_css() {
-    // 1. Load base styles (style.css)
+    // 1. Load base style.css
     gchar *css_path = get_style_path();
-    g_print("Loading base CSS from: %s\n", css_path);
-
     GtkCssProvider *provider = gtk_css_provider_new();
     GFile *base_file = g_file_new_for_path(css_path);
     GError *base_error = NULL;
@@ -1206,23 +1137,19 @@ static void load_css() {
 
     if (g_file_load_contents(base_file, NULL, &base_contents, &base_length, NULL, &base_error)) {
         gtk_css_provider_load_from_string(provider, base_contents);
-        gtk_style_context_add_provider_for_display(
-            gdk_display_get_default(),
-            GTK_STYLE_PROVIDER(provider),
-            GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
-        );
+        gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+            GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
         g_print("Base CSS loaded successfully\n");
         g_free(base_contents);
     } else {
-        g_warning("Failed to load base CSS from '%s': %s",
-                  css_path, base_error ? base_error->message : "Unknown error");
+        g_warning("Failed to load CSS: %s", base_error ? base_error->message : "Unknown");
         if (base_error) g_error_free(base_error);
     }
     g_object_unref(base_file);
     g_object_unref(provider);
     free_path(css_path);
 
-    // 2. Load theme CSS if not using default "light" theme
+    // 2. Hi-Fi: Load theme CSS if not using default "light" theme
     gchar *theme = get_config_theme();
     g_print("Theme from config: %s\n", theme);
 
@@ -1236,16 +1163,12 @@ static void load_css() {
 
         if (g_file_load_contents(theme_file, NULL, &theme_contents, &theme_length, NULL, &theme_error)) {
             gtk_css_provider_load_from_string(theme_provider, theme_contents);
-            gtk_style_context_add_provider_for_display(
-                gdk_display_get_default(),
-                GTK_STYLE_PROVIDER(theme_provider),
-                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1
-            );
+            gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+                GTK_STYLE_PROVIDER(theme_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
             g_print("Theme CSS loaded: %s\n", theme_path);
             g_free(theme_contents);
         } else {
-            g_warning("Failed to load theme CSS from '%s': %s",
-                      theme_path, theme_error ? theme_error->message : "Unknown error");
+            g_warning("Failed to load theme CSS: %s", theme_error ? theme_error->message : "Unknown");
             if (theme_error) g_error_free(theme_error);
         }
         g_object_unref(theme_file);
@@ -1254,7 +1177,7 @@ static void load_css() {
     }
     g_free(theme);
 
-    // 3. Load optional user CSS overrides with highest priority
+    // 3. Hi-Fi: Load optional user CSS overrides
     gchar *user_css = g_build_filename(g_get_user_config_dir(), "hyprwave", "user.css", NULL);
     if (g_file_test(user_css, G_FILE_TEST_EXISTS)) {
         GtkCssProvider *user_provider = gtk_css_provider_new();
@@ -1263,56 +1186,54 @@ static void load_css() {
         gchar *css_contents = NULL;
         gsize css_length = 0;
 
-        // Read and load CSS with error checking
         if (g_file_load_contents(css_file, NULL, &css_contents, &css_length, NULL, &css_error)) {
             gtk_css_provider_load_from_string(user_provider, css_contents);
-            gtk_style_context_add_provider_for_display(
-                gdk_display_get_default(),
-                GTK_STYLE_PROVIDER(user_provider),
-                GTK_STYLE_PROVIDER_PRIORITY_USER
-            );
+            gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+                GTK_STYLE_PROVIDER(user_provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
             g_print("User CSS loaded from: %s\n", user_css);
             g_free(css_contents);
-        } else {
-            g_warning("Failed to load user CSS from '%s': %s",
-                      user_css, css_error ? css_error->message : "Unknown error");
-            if (css_error) g_error_free(css_error);
         }
+        if (css_error) g_error_free(css_error);
         g_object_unref(css_file);
         g_object_unref(user_provider);
     }
     g_free(user_css);
 }
 
-// COMPLETE FIXED VERSION - Replace your entire activate() function
+static gboolean delayed_window_show(gpointer user_data) {
+    gtk_widget_set_visible(GTK_WIDGET(user_data), TRUE);
+    return G_SOURCE_REMOVE;
+}
 
-// COMPLETE FIXED VERSION - Replace your entire activate() function
+static gboolean delayed_revealer_reveal(gpointer user_data) {
+    gtk_revealer_set_reveal_child(GTK_REVEALER(user_data), TRUE);
+    return G_SOURCE_REMOVE;
+}
 
-// COMPLETE FIXED VERSION - Replace your entire activate() function
 
 static void activate(GtkApplication *app, gpointer user_data) {
     AppState *state = g_new0(AppState, 1);
     state->is_playing = FALSE;
     state->is_expanded = FALSE;
     state->is_visible = TRUE;
-    state->suppress_notification = FALSE;
+    state->is_seeking = FALSE;
     state->mpris_proxy = NULL;
     state->current_player = NULL;
     state->last_track_id = NULL;
-    state->last_title = NULL;
     state->layout = layout_load_config();
-    
-    // Initialize notification system
     state->notification = notification_init(app);
-    if (!state->notification) {
-        g_printerr("Failed to initialize notification system\n");
-    }
+    state->volume = NULL;
+    state->is_idle_mode = FALSE;
+    state->idle_timer = 0;
+    state->morph_timer = 0;
+    state->button_fade_opacity = 1.0;
     
+    // Create window FIRST
     GtkWidget *window = gtk_application_window_new(app);
     state->window = window;
     gtk_window_set_title(GTK_WINDOW(window), "HyprWave");
     
-    // Set window size to match control_bar to prevent snap/jump on first animation
+    // Set window size IMMEDIATELY to match control_bar
     if (state->layout->is_vertical) {
         gtk_window_set_default_size(GTK_WINDOW(window), 70, -1);
         gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
@@ -1320,25 +1241,18 @@ static void activate(GtkApplication *app, gpointer user_data) {
         gtk_window_set_default_size(GTK_WINDOW(window), -1, 60);
         gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
     }
-
-    // Layer Shell Setup
+    
+    // LAYER SHELL SETUP
     gtk_layer_init_for_window(GTK_WINDOW(window));
-    gtk_layer_set_exclusive_zone(GTK_WINDOW(window), 0);
     gtk_layer_set_layer(GTK_WINDOW(window), GTK_LAYER_SHELL_LAYER_OVERLAY);
     gtk_layer_set_namespace(GTK_WINDOW(window), "hyprwave");
-    
-    // Setup anchors using layout module
     layout_setup_window_anchors(GTK_WINDOW(window), state->layout);
-    
     gtk_layer_set_keyboard_mode(GTK_WINDOW(window), GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
-    
-    // Set window as transparent app-paintable
+    gtk_layer_set_exclusive_zone(GTK_WINDOW(window), 0);
     gtk_widget_set_name(window, "hyprwave-window");
-    
-    // CRITICAL: Make the window background fully transparent
     gtk_widget_add_css_class(window, "hyprwave-window");
     
-    // Create widget elements
+    // Album cover setup
     GtkWidget *album_cover = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     state->album_cover = album_cover;
     gtk_widget_add_css_class(album_cover, "album-cover");
@@ -1348,87 +1262,81 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_set_hexpand(album_cover, FALSE);
     gtk_widget_set_vexpand(album_cover, FALSE);
     gtk_widget_set_overflow(album_cover, GTK_OVERFLOW_HIDDEN);
-
-    // Double-click on album cover to toggle volume control
-    GtkGesture *album_click = gtk_gesture_click_new();
-    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(album_click), GDK_BUTTON_PRIMARY);
-    g_signal_connect(album_click, "pressed", G_CALLBACK(on_album_cover_clicked), state);
-    gtk_widget_add_controller(album_cover, GTK_EVENT_CONTROLLER(album_click));
-
+    
+    GtkGesture *double_click = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(double_click), GDK_BUTTON_PRIMARY);
+    gtk_widget_add_controller(album_cover, GTK_EVENT_CONTROLLER(double_click));
+    g_signal_connect(double_click, "pressed", G_CALLBACK(on_album_double_click), state);
+    
     GtkWidget *source_label = gtk_label_new("No Source");
     state->source_label = source_label;
     gtk_widget_add_css_class(source_label, "source-label");
-
-    // Format/bitrate label (shown when available)
-    GtkWidget *format_label = gtk_label_new("");
-    state->format_label = format_label;
-    gtk_widget_add_css_class(format_label, "format-label");
-    gtk_widget_set_visible(format_label, FALSE);  // Hidden until bitrate is available
-
-    // Player label (clickable to cycle players)
-    GtkWidget *player_label = gtk_label_new("No Player");
-    state->player_label = player_label;
-    gtk_widget_add_css_class(player_label, "player-label");
-
+    
     GtkWidget *track_title = gtk_label_new("No Track Playing");
     state->track_title = track_title;
     gtk_widget_add_css_class(track_title, "track-title");
     gtk_label_set_ellipsize(GTK_LABEL(track_title), PANGO_ELLIPSIZE_END);
     gtk_label_set_max_width_chars(GTK_LABEL(track_title), 20);
-    
+
     GtkWidget *artist_label = gtk_label_new("Unknown Artist");
     state->artist_label = artist_label;
     gtk_widget_add_css_class(artist_label, "artist-label");
     gtk_label_set_ellipsize(GTK_LABEL(artist_label), PANGO_ELLIPSIZE_END);
     gtk_label_set_max_width_chars(GTK_LABEL(artist_label), 20);
-    
-    // Progress bar is now a GtkScale for seek support
+
     GtkWidget *progress_bar = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 1.0, 0.001);
     state->progress_bar = progress_bar;
     gtk_widget_add_css_class(progress_bar, "track-progress");
-    gtk_scale_set_draw_value(GTK_SCALE(progress_bar), FALSE);  // Hide numeric value
-    gtk_range_set_value(GTK_RANGE(progress_bar), 0.0);
-    gtk_widget_set_size_request(progress_bar, 140, 16);  // Taller for easier clicking
-
-    // Connect seek signal - uses debounce to perform seek after user stops interacting
-    // Store handler ID so we can block it during programmatic updates
-    state->seek_handler_id = g_signal_connect(progress_bar, "value-changed", G_CALLBACK(on_seek_value_changed), state);
+    gtk_scale_set_draw_value(GTK_SCALE(progress_bar), FALSE);
+    gtk_widget_set_size_request(progress_bar, 140, 14);
+    g_signal_connect(progress_bar, "change-value", G_CALLBACK(on_change_value), state);
+    GtkEventController *controller = gtk_event_controller_legacy_new();
+    g_signal_connect(controller, "event", G_CALLBACK(on_button_release_event), state);
+    gtk_widget_add_controller(progress_bar, controller);
 
     GtkWidget *time_remaining = gtk_label_new("--:--");
     state->time_remaining = time_remaining;
     gtk_widget_add_css_class(time_remaining, "time-remaining");
 
-    // Create expanded section using layout module
-    // Add click gesture to player label for cycling players
-    GtkGesture *player_click = gtk_gesture_click_new();
-    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(player_click), GDK_BUTTON_PRIMARY);
-    g_signal_connect(player_click, "pressed", G_CALLBACK(on_player_clicked), state);
-    gtk_widget_add_controller(player_label, GTK_EVENT_CONTROLLER(player_click));
-
     ExpandedWidgets expanded_widgets = {
-        .album_cover = album_cover,
-        .source_label = source_label,
-        .format_label = format_label,
-        .player_label = player_label,
-        .track_title = track_title,
-        .artist_label = artist_label,
-        .progress_bar = progress_bar,
-        .time_remaining = time_remaining
+        .album_cover = album_cover, .source_label = source_label,
+        .track_title = track_title, .artist_label = artist_label,
+        .progress_bar = progress_bar, .time_remaining = time_remaining
     };
-
     GtkWidget *expanded_section = layout_create_expanded_section(state->layout, &expanded_widgets);
+
+    // Initialize volume
+    state->volume = volume_init(NULL, state->layout->is_vertical);
+
+    GtkWidget *expanded_with_volume;
+    if (state->layout->is_vertical) {
+        expanded_with_volume = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_box_append(GTK_BOX(expanded_with_volume), state->volume->revealer);
+        gtk_box_append(GTK_BOX(expanded_with_volume), expanded_section);
+        gtk_widget_set_size_request(expanded_with_volume, -1, 160);
+        gtk_widget_set_vexpand(expanded_section, TRUE);
+        gtk_widget_set_vexpand(state->volume->revealer, FALSE);
+    } else {
+        expanded_with_volume = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_box_append(GTK_BOX(expanded_with_volume), expanded_section);
+        gtk_box_append(GTK_BOX(expanded_with_volume), state->volume->revealer);
+    }
     
-    // Create revealer
+    state->expanded_with_volume = expanded_with_volume;
+    g_signal_connect(state->volume->revealer, "notify::child-revealed",
+                     G_CALLBACK(on_volume_visibility_changed), state);
+
     GtkWidget *revealer = gtk_revealer_new();
     state->revealer = revealer;
     gtk_revealer_set_transition_type(GTK_REVEALER(revealer), layout_get_transition_type(state->layout));
     gtk_revealer_set_transition_duration(GTK_REVEALER(revealer), 300);
-    gtk_revealer_set_child(GTK_REVEALER(revealer), expanded_section);
+    gtk_revealer_set_child(GTK_REVEALER(revealer), expanded_with_volume);
     gtk_revealer_set_reveal_child(GTK_REVEALER(revealer), FALSE);
     g_signal_connect(revealer, "notify::child-revealed", G_CALLBACK(on_revealer_transition_done), state);
-    
-    // Create buttons
-    // Previous button
+
+    // ========================================
+    // CONTROL BUTTONS - Create all buttons
+    // ========================================
     GtkWidget *prev_btn = gtk_button_new();
     gtk_widget_set_size_request(prev_btn, 44, 44);
     gchar *prev_icon_path = get_icon_path("previous.svg");
@@ -1439,10 +1347,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_add_css_class(prev_btn, "control-button");
     gtk_widget_add_css_class(prev_btn, "prev-button");
     g_signal_connect(prev_btn, "clicked", G_CALLBACK(on_prev_clicked), state);
-    
-    // Play button
+
     GtkWidget *play_btn = gtk_button_new();
-    state->play_button = play_btn;
     gtk_widget_set_size_request(play_btn, 44, 44);
     gchar *play_icon_path = get_icon_path("play.svg");
     GtkWidget *play_icon = gtk_image_new_from_file(play_icon_path);
@@ -1453,8 +1359,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_add_css_class(play_btn, "control-button");
     gtk_widget_add_css_class(play_btn, "play-button");
     g_signal_connect(play_btn, "clicked", G_CALLBACK(on_play_clicked), state);
-    
-    // Next button
+
     GtkWidget *next_btn = gtk_button_new();
     gtk_widget_set_size_request(next_btn, 44, 44);
     gchar *next_icon_path = get_icon_path("next.svg");
@@ -1465,8 +1370,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_add_css_class(next_btn, "control-button");
     gtk_widget_add_css_class(next_btn, "next-button");
     g_signal_connect(next_btn, "clicked", G_CALLBACK(on_next_clicked), state);
-    
-    // Expand button
+
     GtkWidget *expand_btn = gtk_button_new();
     gtk_widget_set_size_request(expand_btn, 44, 44);
     const gchar *initial_icon_name = layout_get_expand_icon(state->layout, FALSE);
@@ -1480,17 +1384,75 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_add_css_class(expand_btn, "expand-button");
     g_signal_connect(expand_btn, "clicked", G_CALLBACK(on_expand_clicked), state);
     
-    // Create control bar using layout module
-    GtkWidget *control_bar = layout_create_control_bar(state->layout, &prev_btn, &play_btn, &next_btn, &expand_btn);
+    // Store button references in state
+    state->prev_btn = prev_btn;
+    state->play_btn = play_btn;
+    state->next_btn = next_btn;
+    state->expand_btn = expand_btn;
+
+    // ========================================
+    // CONTROL BAR + VISUALIZER SETUP
+    // ========================================
+    GtkWidget *final_control_widget;  // What goes into main_container
     
-    // Create main container using layout module
-    GtkWidget *main_container = layout_create_main_container(state->layout, control_bar, revealer);
+    if (state->layout->is_vertical) {
+        // Vertical: No visualizer, just buttons
+        state->visualizer = NULL;
+        
+        final_control_widget = layout_create_control_bar(state->layout, 
+            &prev_btn, &play_btn, &next_btn, &expand_btn);
+        
+        // Store reference to the control bar itself
+        state->control_bar_container = final_control_widget;
+        
+    } else {
+        // Horizontal: Create visualizer if enabled, otherwise just buttons
+        if (state->layout->visualizer_enabled) {
+            state->visualizer = visualizer_init();
+        } else {
+            state->visualizer = NULL;
+        }
+        
+        // Create control bar
+        GtkWidget *control_bar = layout_create_control_bar(state->layout, 
+            &prev_btn, &play_btn, &next_btn, &expand_btn);
+        
+        // CRITICAL: Store reference to the ACTUAL control bar for resizing
+        state->control_bar_container = control_bar;
+        
+        if (state->visualizer) {
+            // Create overlay: control bar as base, visualizer on top
+            GtkWidget *overlay = gtk_overlay_new();
+            gtk_overlay_set_child(GTK_OVERLAY(overlay), control_bar);
+            
+            // CRITICAL: Visualizer must pass through clicks to buttons below
+            gtk_widget_set_can_target(state->visualizer->container, FALSE);
+            
+            gtk_overlay_add_overlay(GTK_OVERLAY(overlay), state->visualizer->container);
+            
+            // Visualizer starts hidden and fully transparent
+            gtk_widget_set_visible(state->visualizer->container, TRUE);
+            gtk_widget_set_opacity(state->visualizer->container, 0.0);
+            state->visualizer->fade_opacity = 0.0;  // Start at 0
+            
+            // Use overlay as the widget that goes into main_container
+            final_control_widget = overlay;
+        } else {
+            // No visualizer - just use control bar directly
+            final_control_widget = control_bar;
+        }
+    }
     
-    // Wrap main_container in a window-level revealer for hide/show animation
+    // Create main container
+    GtkWidget *main_container = layout_create_main_container(state->layout, 
+        final_control_widget, revealer);
+
+    // ========================================
+    // WINDOW REVEALER
+    // ========================================
     GtkWidget *window_revealer = gtk_revealer_new();
     state->window_revealer = window_revealer;
     
-    // Set transition based on layout edge
     GtkRevealerTransitionType window_transition;
     if (state->layout->edge == EDGE_RIGHT) {
         window_transition = GTK_REVEALER_TRANSITION_TYPE_SLIDE_LEFT;
@@ -1501,134 +1463,84 @@ static void activate(GtkApplication *app, gpointer user_data) {
     } else {
         window_transition = GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP;
     }
-    
     gtk_revealer_set_transition_type(GTK_REVEALER(window_revealer), window_transition);
     gtk_revealer_set_transition_duration(GTK_REVEALER(window_revealer), 300);
     gtk_revealer_set_child(GTK_REVEALER(window_revealer), main_container);
-    // Start hidden so we can control the first reveal with pre-warming
     gtk_revealer_set_reveal_child(GTK_REVEALER(window_revealer), FALSE);
-    g_signal_connect(window_revealer, "notify::child-revealed",
+    g_signal_connect(window_revealer, "notify::child-revealed", 
                      G_CALLBACK(on_window_hide_complete), state);
 
     gtk_window_set_child(GTK_WINDOW(window), window_revealer);
 
-    // Pre-warm revealers to establish geometry for smooth animations
-    // Layer shell needs to know maximum window size before first animation
+    // ========================================
+    // PRE-WARM REVEALERS (for smooth animations)
+    // ========================================
     gtk_widget_realize(window);
     gtk_window_present(GTK_WINDOW(window));
-
-    // Process initial events
+    
     while (g_main_context_pending(NULL)) {
         g_main_context_iteration(NULL, FALSE);
     }
-
-    // Disable animations temporarily
+    
     guint window_duration = gtk_revealer_get_transition_duration(GTK_REVEALER(window_revealer));
     guint internal_duration = gtk_revealer_get_transition_duration(GTK_REVEALER(revealer));
     gtk_revealer_set_transition_duration(GTK_REVEALER(window_revealer), 0);
     gtk_revealer_set_transition_duration(GTK_REVEALER(revealer), 0);
-
-    // Expand window_revealer (show control bar)
+    
     gtk_revealer_set_reveal_child(GTK_REVEALER(window_revealer), TRUE);
     gtk_widget_queue_allocate(window);
     while (g_main_context_pending(NULL)) {
         g_main_context_iteration(NULL, FALSE);
     }
-
-    // Expand internal revealer to establish max geometry
+    
     gtk_revealer_set_reveal_child(GTK_REVEALER(revealer), TRUE);
     gtk_widget_queue_allocate(window);
     while (g_main_context_pending(NULL)) {
         g_main_context_iteration(NULL, FALSE);
     }
-
-    // Collapse internal revealer back to control bar only
+    
     gtk_revealer_set_reveal_child(GTK_REVEALER(revealer), FALSE);
     gtk_widget_queue_allocate(window);
     while (g_main_context_pending(NULL)) {
         g_main_context_iteration(NULL, FALSE);
     }
-
-    // Restore animation durations - layer shell now knows max geometry
+    
     gtk_revealer_set_transition_duration(GTK_REVEALER(window_revealer), window_duration);
     gtk_revealer_set_transition_duration(GTK_REVEALER(revealer), internal_duration);
-
-    // Setup signal handlers for keybinds
+    
+ if (!state->layout->is_vertical && state->visualizer) {
+    GtkEventController *motion_controller = gtk_event_controller_motion_new();
+    g_signal_connect(motion_controller, "motion", G_CALLBACK(on_mouse_motion), state);
+    
+    // CRITICAL: Attach to control_bar_container, NOT window!
+    // This way motion only triggers when hovering over the visualizer/control bar
+    gtk_widget_add_controller(state->control_bar_container, motion_controller);
+    
+    g_print("✓ Mouse motion detector attached to control bar only\n");
+}
+    // ========================================
+    // FINALIZE
+    // ========================================
     global_state = state;
     signal(SIGUSR1, handle_sigusr1);
     signal(SIGUSR2, handle_sigusr2);
-    
-    // Print keybind setup instructions on first run
-    static gboolean first_run_check = FALSE;
-    gchar *config_check = g_build_filename(g_get_user_config_dir(), "hyprwave", ".setup_complete", NULL);
-    
-    if (!g_file_test(config_check, G_FILE_TEST_EXISTS)) {
-        first_run_check = TRUE;
-        // Create marker file
-        g_file_set_contents(config_check, "1", -1, NULL);
-    }
-    g_free(config_check);
-    
-    if (first_run_check) {
-        g_print("\n");
-        g_print("═══════════════════════════════════════════════════════════\n");
-        g_print("  🎵 HyprWave Keybind Setup\n");
-        g_print("═══════════════════════════════════════════════════════════\n");
-        g_print("\n");
-        g_print("Add these keybinds to your compositor config:\n");
-        g_print("\n");
-        g_print("Hyprland (~/.config/hypr/hyprland.conf):\n");
-        g_print("  bind = SUPER_SHIFT, M, exec, hyprwave-toggle visibility\n");
-        g_print("  bind = SUPER, M, exec, hyprwave-toggle expand\n");
-        g_print("\n");
-        g_print("Niri (~/.config/niri/config.kdl):\n");
-        g_print("  binds {\n");
-        g_print("      Mod+Shift+M { spawn \"hyprwave-toggle\" \"visibility\"; }\n");
-        g_print("      Mod+M { spawn \"hyprwave-toggle\" \"expand\"; }\n");
-        g_print("  }\n");
-        g_print("\n");
-        g_print("Then reload your compositor config.\n");
-        g_print("\n");
-        g_print("Keybinds:\n");
-        g_print("  • %s - Hide/show HyprWave\n", state->layout->toggle_visibility_bind);
-        g_print("  • %s - Toggle album details\n", state->layout->toggle_expand_bind);
-        g_print("\n");
-        g_print("═══════════════════════════════════════════════════════════\n");
-        g_print("\n");
-    }
-    
-    // Find and connect to active media player
+
     find_active_player(state);
-
-    // Initialize volume control now that we have the proxy
-    state->volume = volume_init(state->mpris_proxy, state->layout->is_vertical);
-    if (state->volume && state->volume->revealer) {
-        // Add volume control to expanded section
-        gtk_box_append(GTK_BOX(gtk_revealer_get_child(GTK_REVEALER(state->revealer))), state->volume->revealer);
-    }
-
-    // Load available players
-    load_available_players(state);
-
-    // Update position every second
     state->update_timer = g_timeout_add_seconds(1, update_position_tick, state);
-
-    // Refresh playback status after main loop starts (D-Bus cache delay)
-    g_timeout_add(500, refresh_playback_status, state);
-
-    g_print("HyprWave Hi-Fi Edition v%s started!\n", HYPRWAVE_VERSION);
+    
+    // Start idle timer (only for horizontal layout with visualizer enabled and timeout > 0)
+    if (!state->layout->is_vertical && state->visualizer && 
+        state->layout->visualizer_enabled && state->layout->visualizer_idle_timeout > 0) {
+        reset_idle_timer(state);
+    }
 }
-
 
 
 int main(int argc, char **argv) {
     GtkApplication *app = gtk_application_new("com.hyprwave.app", G_APPLICATION_DEFAULT_FLAGS);
-    
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     g_signal_connect(app, "startup", G_CALLBACK(load_css), NULL);
-    
     int status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);
-    
     return status;
 }

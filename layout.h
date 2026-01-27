@@ -19,7 +19,9 @@ typedef struct {
     gchar *toggle_expand_bind;
     gboolean notifications_enabled;
     gboolean now_playing_enabled;
-    gchar *theme;  // "light" or "dark"
+    gchar *theme;  // "light" or "dark" (Hi-Fi feature)
+    gboolean visualizer_enabled;
+    gint visualizer_idle_timeout;
 } LayoutConfig;
 
 typedef struct {

@@ -1,8 +1,8 @@
 CC = gcc
 CFLAGS = `pkg-config --cflags gtk4 gtk4-layer-shell-0`
-LIBS = `pkg-config --libs gtk4 gtk4-layer-shell-0` -lm
+LIBS = `pkg-config --libs gtk4 gtk4-layer-shell-0 gio-2.0 gdk-pixbuf-2.0 libpulse` -lm
 TARGET = hyprwave
-SRC = main.c layout.c paths.c notification.c art.c volume.c
+SRC = main.c layout.c paths.c notification.c art.c volume.c visualizer.c
 
 # Installation paths
 PREFIX ?= $(HOME)/.local

@@ -8,13 +8,13 @@
 
 LayoutConfig* layout_load_config(void) {
     LayoutConfig *config = g_new0(LayoutConfig, 1);
-    
+
     gchar *config_dir = g_build_filename(g_get_user_config_dir(), "hyprwave", NULL);
     gchar *config_file = g_build_filename(config_dir, "config.conf", NULL);
-    
+
     // Create config directory if it doesn't exist
     g_mkdir_with_parents(config_dir, 0755);
-    
+
     // Check if config file exists, create default if not
     if (!g_file_test(config_file, G_FILE_TEST_EXISTS)) {
         gchar *default_config =
@@ -43,15 +43,23 @@ LayoutConfig* layout_load_config(void) {
             "enabled = true\n"
             "\n"
             "# Show notification when song changes\n"
-            "now_playing = true\n";
-        
+            "now_playing = true\n"
+            "\n"
+            "[Visualizer]\n"
+            "# Enable/disable visualizer (horizontal layout only)\n"
+            "enabled = true\n"
+            "\n"
+            "# Idle timeout in seconds before visualizer appears\n"
+            "# Set to 0 to disable auto-activation (visualizer only shows on demand)\n"
+            "idle_timeout = 30\n";
+
         g_file_set_contents(config_file, default_config, -1, NULL);
         g_print("Created default config at: %s\n", config_file);
     }
-    
+
     // Load config
     GKeyFile *keyfile = g_key_file_new();
-    
+
     // Set defaults
     config->edge = EDGE_RIGHT;
     config->margin = 10;
@@ -60,11 +68,13 @@ LayoutConfig* layout_load_config(void) {
     config->notifications_enabled = TRUE;
     config->now_playing_enabled = TRUE;
     config->theme = g_strdup("light");
-    
+    config->visualizer_enabled = TRUE;
+    config->visualizer_idle_timeout = 30;
+
     if (g_key_file_load_from_file(keyfile, config_file, G_KEY_FILE_NONE, NULL)) {
         // Load General section
         gchar *edge_str = g_key_file_get_string(keyfile, "General", "edge", NULL);
-        
+
         if (edge_str) {
             if (g_strcmp0(edge_str, "left") == 0) {
                 config->edge = EDGE_LEFT;
@@ -77,7 +87,7 @@ LayoutConfig* layout_load_config(void) {
             }
             g_free(edge_str);
         }
-        
+
         config->margin = g_key_file_get_integer(keyfile, "General", "margin", NULL);
         if (config->margin == 0) config->margin = 10;
 
@@ -94,13 +104,13 @@ LayoutConfig* layout_load_config(void) {
             g_free(config->toggle_visibility_bind);
             config->toggle_visibility_bind = vis_bind;
         }
-        
+
         gchar *exp_bind = g_key_file_get_string(keyfile, "Keybinds", "toggle_expand", NULL);
         if (exp_bind) {
             g_free(config->toggle_expand_bind);
             config->toggle_expand_bind = exp_bind;
         }
-        
+
         // Load Notifications section (optional)
         GError *error = NULL;
         gboolean notif_enabled = g_key_file_get_boolean(keyfile, "Notifications", "enabled", &error);
@@ -110,21 +120,38 @@ LayoutConfig* layout_load_config(void) {
             g_error_free(error);
             error = NULL;
         }
-        
+
         gboolean now_playing = g_key_file_get_boolean(keyfile, "Notifications", "now_playing", &error);
         if (!error) {
             config->now_playing_enabled = now_playing;
         } else {
             g_error_free(error);
+            error = NULL;
+        }
+
+        // Load Visualizer section (optional)
+        gboolean viz_enabled = g_key_file_get_boolean(keyfile, "Visualizer", "enabled", &error);
+        if (!error) {
+            config->visualizer_enabled = viz_enabled;
+        } else {
+            g_error_free(error);
+            error = NULL;
+        }
+
+        gint viz_timeout = g_key_file_get_integer(keyfile, "Visualizer", "idle_timeout", &error);
+        if (!error) {
+            config->visualizer_idle_timeout = viz_timeout;
+            if (config->visualizer_idle_timeout < 0) config->visualizer_idle_timeout = 0;
+        } else {
+            g_error_free(error);
         }
     }
-    
     config->is_vertical = (config->edge == EDGE_RIGHT || config->edge == EDGE_LEFT);
-    
+
     g_key_file_free(keyfile);
     g_free(config_file);
     g_free(config_dir);
-    
+
     g_print("Layout: %s edge (%s), theme: %s\n",
             config->edge == EDGE_RIGHT ? "right" :
             config->edge == EDGE_LEFT ? "left" :
@@ -154,7 +181,7 @@ void layout_setup_window_anchors(GtkWindow *window, LayoutConfig *config) {
     gtk_layer_set_anchor(window, GTK_LAYER_SHELL_EDGE_LEFT, config->edge == EDGE_LEFT);
     gtk_layer_set_anchor(window, GTK_LAYER_SHELL_EDGE_TOP, config->edge == EDGE_TOP);
     gtk_layer_set_anchor(window, GTK_LAYER_SHELL_EDGE_BOTTOM, config->edge == EDGE_BOTTOM);
-    
+
     // Set margin
     if (config->edge == EDGE_RIGHT) {
         gtk_layer_set_margin(window, GTK_LAYER_SHELL_EDGE_RIGHT, config->margin);
@@ -178,25 +205,25 @@ GtkWidget* layout_create_control_bar(LayoutConfig *config,
                                       GtkWidget **expand_btn) {
     GtkOrientation orientation = config->is_vertical ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL;
     GtkWidget *control_bar = gtk_box_new(orientation, 8);
-    
+
     gtk_widget_add_css_class(control_bar, config->is_vertical ? "control-container" : "control-container-horizontal");
     gtk_widget_set_halign(control_bar, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(control_bar, GTK_ALIGN_CENTER);
     gtk_widget_set_hexpand(control_bar, FALSE);
     gtk_widget_set_vexpand(control_bar, FALSE);
-    
+
     if (config->is_vertical) {
         gtk_widget_set_size_request(control_bar, 70, 240);
     } else {
         gtk_widget_set_size_request(control_bar, 240, 60);
     }
-    
+
     // Create buttons (widgets created externally, we just arrange them)
     gtk_box_append(GTK_BOX(control_bar), *prev_btn);
     gtk_box_append(GTK_BOX(control_bar), *play_btn);
     gtk_box_append(GTK_BOX(control_bar), *next_btn);
     gtk_box_append(GTK_BOX(control_bar), *expand_btn);
-    
+
     return control_bar;
 }
 
@@ -206,7 +233,7 @@ GtkWidget* layout_create_control_bar(LayoutConfig *config,
 
 GtkWidget* layout_create_expanded_section(LayoutConfig *config, ExpandedWidgets *widgets) {
     GtkWidget *expanded_section;
-    
+
     if (config->is_vertical) {
         // Vertical layout: stack everything vertically
         expanded_section = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
@@ -229,11 +256,11 @@ GtkWidget* layout_create_expanded_section(LayoutConfig *config, ExpandedWidgets 
         gtk_widget_add_css_class(expanded_section, "expanded-section-horizontal");
         gtk_widget_set_halign(expanded_section, GTK_ALIGN_CENTER);
         gtk_widget_set_valign(expanded_section, GTK_ALIGN_CENTER);
-        
+
         // Info panel (right side)
         GtkWidget *info_panel = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
         gtk_widget_set_valign(info_panel, GTK_ALIGN_CENTER);
-        
+
         gtk_label_set_xalign(GTK_LABEL(widgets->source_label), 0.0);
         gtk_label_set_xalign(GTK_LABEL(widgets->format_label), 0.0);
         gtk_label_set_xalign(GTK_LABEL(widgets->player_label), 0.0);
@@ -253,11 +280,11 @@ GtkWidget* layout_create_expanded_section(LayoutConfig *config, ExpandedWidgets 
         gtk_box_append(GTK_BOX(info_panel), widgets->artist_label);
         gtk_box_append(GTK_BOX(info_panel), widgets->progress_bar);
         gtk_box_append(GTK_BOX(info_panel), widgets->time_remaining);
-        
+
         gtk_box_append(GTK_BOX(expanded_section), widgets->album_cover);
         gtk_box_append(GTK_BOX(expanded_section), info_panel);
     }
-    
+
     return expanded_section;
 }
 
@@ -270,11 +297,11 @@ GtkWidget* layout_create_main_container(LayoutConfig *config,
                                          GtkWidget *revealer) {
     GtkOrientation orientation = config->is_vertical ? GTK_ORIENTATION_HORIZONTAL : GTK_ORIENTATION_VERTICAL;
     GtkWidget *main_container = gtk_box_new(orientation, 0);
-    
+
     gtk_widget_add_css_class(main_container, "main-container");
     gtk_widget_set_hexpand(main_container, FALSE);
     gtk_widget_set_vexpand(main_container, FALSE);
-    
+
     if (config->is_vertical) {
         // Vertical: control bar on edge, revealer slides outward
         gtk_box_append(GTK_BOX(main_container), control_bar);
@@ -289,7 +316,7 @@ GtkWidget* layout_create_main_container(LayoutConfig *config,
             gtk_box_append(GTK_BOX(main_container), control_bar);
         }
     }
-    
+
     return main_container;
 }
 
