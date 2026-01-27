@@ -15,6 +15,12 @@ yay -S hyprwave
 
 It will not give you the bleeding new updates, but the latest releases.
 
+# Your Control Bar, Your Imagination
+
+<img width="518" height="240" alt="image" src="https://github.com/user-attachments/assets/d79afb29-844d-4bae-b899-28aea6646139" />
+
+Style hyprwave to your taste via the style.css!
+
 ## Screenshots & GIFs
 
 ### Vertical Layout
