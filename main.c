@@ -10,6 +10,7 @@
 #include "art.h"
 #include "volume.h"
 #include "visualizer.h"
+#include "pipewire_volume.h"
 
 typedef struct {
     GtkWidget *window;
@@ -341,6 +342,14 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
     // Update volume control with new player (reinitializes PipeWire state)
     if (state->volume) {
         volume_update_player(state->volume, state->mpris_proxy, bus_name);
+    }
+
+    // Update visualizer to capture this player's audio
+    if (state->visualizer) {
+        guint32 player_pid = pw_extract_pid_from_bus_name(bus_name);
+        if (player_pid > 0) {
+            visualizer_set_target_pid(state->visualizer, player_pid);
+        }
     }
 }
 

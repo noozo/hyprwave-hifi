@@ -92,6 +92,8 @@ The visualizer captures your system audio playback and displays real-time freque
 
 Features:
 - Real-time audio frequency visualization
+- **Volume-independent** - Uses AGC (Automatic Gain Control) so visualization reacts to audio dynamics, not absolute volume level
+- **PipeWire native** - Direct PipeWire API integration (no PulseAudio dependency for visualizer)
 - Smooth fade animations between modes
 - Configurable idle timeout
 - Option to disable visualizer completely
@@ -119,14 +121,16 @@ Double-click the album cover to reveal the volume bar. The volume bar auto-hides
 
 ```bash
 # Arch Linux / Manjaro
-sudo pacman -S gtk4 gtk4-layer-shell pulseaudio
+sudo pacman -S gtk4 gtk4-layer-shell pipewire
 
 # Ubuntu / Debian
-sudo apt install libgtk-4-dev gtk4-layer-shell libpulse-dev
+sudo apt install libgtk-4-dev gtk4-layer-shell libpipewire-0.3-dev
 
 # Fedora
-sudo dnf install gtk4-devel gtk4-layer-shell-devel pulseaudio-libs-devel
+sudo dnf install gtk4-devel gtk4-layer-shell-devel pipewire-devel
 ```
+
+**Note:** PipeWire is required for the audio visualizer. Most modern Linux distributions use PipeWire by default. The visualizer captures from the default audio sink monitor, providing volume-independent visualization through AGC (Automatic Gain Control).
 
 ### Building from Source
 
@@ -300,10 +304,11 @@ Refer to Issues for a more precise explanation.
 
 ### Visualizer not working
 
-1. Ensure PulseAudio is running: `pulseaudio --check`
+1. Ensure PipeWire is running: `systemctl --user status pipewire`
 2. Check that visualizer is enabled in config: `enabled = true` under `[Visualizer]`
 3. Visualizer only works in horizontal layouts (top/bottom edges)
-4. Check console output for PulseAudio connection errors
+4. Check console output for PipeWire connection errors
+5. The visualizer uses AGC, so it should work at any volume level
 
 ### Notifications not appearing
 
@@ -327,10 +332,23 @@ HyprWave requires the music player to provide album art URLs via MPRIS. Desktop 
 - **Language:** C
 - **GUI Framework:** GTK4
 - **Layer Shell:** gtk4-layer-shell (Wayland overlay)
-- **Audio:** PulseAudio (for visualizer)
+- **Audio:** PipeWire native API (for visualizer with AGC)
+- **Volume Control:** PipeWire via pactl (per-application volume)
 - **IPC:** D-Bus (MPRIS2 protocol)
 - **Memory:** ~80-95MB RAM (base), ~100-110MB with visualizer active
 - **CPU:** <0.3% idle, <1% during updates, <2% with visualizer
+
+### Visualizer Technical Details
+
+The audio visualizer uses PipeWire's native API with Automatic Gain Control (AGC):
+
+- **AGC Attack:** 0.9 (fast response to louder audio)
+- **AGC Decay:** 0.9995 (slow decay to maintain levels during quiet parts)
+- **Capture Source:** Default audio sink monitor (system playback audio)
+- **Sample Format:** 32-bit float, stereo, 48kHz
+- **Bars:** 55 frequency bins with smoothing factor 0.7
+
+AGC normalizes the audio level dynamically, so the visualization responds to the relative dynamics of the music rather than the absolute volume. This means lowering your system volume won't affect the visualizer's appearance.
 
 ### File Paths
 
@@ -371,7 +389,7 @@ Open source. Free to use, modify, and distribute.
 
 - Built with [GTK4](https://gtk.org/)
 - Uses [gtk4-layer-shell](https://github.com/wmww/gtk-layer-shell)
-- Audio capture via [PulseAudio](https://www.freedesktop.org/wiki/Software/PulseAudio/)
+- Audio capture via [PipeWire](https://pipewire.org/)
 - Inspired by [waybar](https://github.com/Alexays/Waybar)
 - MPRIS specification by [freedesktop.org](https://www.freedesktop.org/)
 

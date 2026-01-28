@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS = `pkg-config --cflags gtk4 gtk4-layer-shell-0`
-LIBS = `pkg-config --libs gtk4 gtk4-layer-shell-0 gio-2.0 gdk-pixbuf-2.0 libpulse` -lm
+CFLAGS = `pkg-config --cflags gtk4 gtk4-layer-shell-0 libpipewire-0.3`
+LIBS = `pkg-config --libs gtk4 gtk4-layer-shell-0 gio-2.0 gdk-pixbuf-2.0 libpipewire-0.3` -lm
 TARGET = hyprwave
 SRC = main.c layout.c paths.c notification.c art.c volume.c visualizer.c pipewire_volume.c
 
