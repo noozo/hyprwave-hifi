@@ -731,6 +731,49 @@ void visualizer_set_target_pid(VisualizerState *state, guint32 pid) {
     }
 }
 
+void visualizer_retry_target(VisualizerState *state) {
+    if (!state || state->target_pid == 0) return;
+
+    // Already have a valid target, no need to retry
+    if (state->target_serial > 0 && state->target_found) return;
+
+    g_print("Visualizer: Retrying sink-input lookup for PID %u\n", state->target_pid);
+
+    // Re-attempt to find sink-input
+    gint sink_input = pw_find_sink_input_by_pid(state->target_pid);
+    if (sink_input < 0) {
+        // Try child processes
+        gchar *cmd = g_strdup_printf("pgrep -P %u", state->target_pid);
+        gchar *output = NULL;
+        if (g_spawn_command_line_sync(cmd, &output, NULL, NULL, NULL) && output) {
+            gchar **child_pids = g_strsplit(output, "\n", -1);
+            for (gchar **p = child_pids; *p && **p; p++) {
+                guint32 child_pid = (guint32)g_ascii_strtoull(*p, NULL, 10);
+                if (child_pid > 0) {
+                    sink_input = pw_find_sink_input_by_pid(child_pid);
+                    if (sink_input >= 0) break;
+                }
+            }
+            g_strfreev(child_pids);
+            g_free(output);
+        }
+        g_free(cmd);
+    }
+
+    if (sink_input >= 0 && sink_input != state->target_serial) {
+        state->target_serial = sink_input;
+        state->target_found = FALSE;
+        g_print("Visualizer: Found sink-input %d for PID %u (retry)\n", sink_input, state->target_pid);
+
+        // Search cached nodes
+        if (state->is_running && state->pw_loop) {
+            pw_thread_loop_lock(state->pw_loop);
+            search_cached_nodes_for_target(state);
+            pw_thread_loop_unlock(state->pw_loop);
+        }
+    }
+}
+
 void visualizer_cleanup(VisualizerState *state) {
     if (!state) return;
 

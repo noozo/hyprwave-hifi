@@ -70,6 +70,9 @@ void visualizer_stop(VisualizerState *state);
 // Set target player by PID (call when MPRIS player changes)
 void visualizer_set_target_pid(VisualizerState *state, guint32 pid);
 
+// Retry finding sink-input for current target (call when playback starts)
+void visualizer_retry_target(VisualizerState *state);
+
 // Cleanup
 void visualizer_cleanup(VisualizerState *state);
 

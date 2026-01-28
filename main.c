@@ -779,11 +779,18 @@ static void update_playback_status(AppState *state) {
     GVariant *status_var = g_dbus_proxy_get_cached_property(state->mpris_proxy, "PlaybackStatus");
     if (status_var) {
         const gchar *status = g_variant_get_string(status_var, NULL);
+        gboolean was_playing = state->is_playing;
         state->is_playing = g_strcmp0(status, "Playing") == 0;
         gchar *icon_path = get_icon_path(state->is_playing ? "pause.svg" : "play.svg");
         gtk_image_set_from_file(GTK_IMAGE(state->play_icon), icon_path);
         free_path(icon_path);
         g_variant_unref(status_var);
+
+        // When playback starts, retry visualizer target lookup
+        // (audio stream may not exist until playback actually begins)
+        if (state->is_playing && !was_playing && state->visualizer) {
+            visualizer_retry_target(state->visualizer);
+        }
     }
 }
 
