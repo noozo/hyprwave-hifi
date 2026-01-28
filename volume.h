@@ -16,10 +16,19 @@ typedef struct {
     gboolean is_showing;
     guint hide_timer;
     guint pending_set_timer;  // For throttled volume setting
+
+    // PipeWire per-application volume control
+    gchar *mpris_bus_name;       // D-Bus name for PID extraction
+    gint pw_sink_input_index;    // PipeWire sink-input index, -1 if not found
+    gboolean use_pipewire_volume; // TRUE if using PipeWire, FALSE for MPRIS
 } VolumeState;
 
 // Initialize volume control
-VolumeState* volume_init(GDBusProxy *mpris_proxy, gboolean is_vertical);
+// mpris_bus_name is used to find the PipeWire sink-input for PID-based mapping
+VolumeState* volume_init(GDBusProxy *mpris_proxy, const gchar *mpris_bus_name, gboolean is_vertical);
+
+// Update the MPRIS proxy and reinitialize PipeWire state (call when player changes)
+void volume_update_player(VolumeState *state, GDBusProxy *mpris_proxy, const gchar *mpris_bus_name);
 
 // Show volume control with animation
 void volume_show(VolumeState *state);

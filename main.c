@@ -338,9 +338,9 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
     update_playback_status(state);
     state->suppress_notification = FALSE;
 
-    // Update volume control with new player
+    // Update volume control with new player (reinitializes PipeWire state)
     if (state->volume) {
-        state->volume->mpris_proxy = state->mpris_proxy;
+        volume_update_player(state->volume, state->mpris_proxy, bus_name);
     }
 }
 
@@ -804,11 +804,11 @@ static void connect_to_player(AppState *state, const gchar *bus_name) {
     g_signal_connect(state->mpris_proxy, "g-properties-changed",
                      G_CALLBACK(on_properties_changed), state);
     update_metadata(state);
-    
+
     if (state->volume) {
-        state->volume->mpris_proxy = state->mpris_proxy;
+        volume_update_player(state->volume, state->mpris_proxy, bus_name);
     }
-    
+
     g_print("Connected to player: %s\n", bus_name);
 }
 
@@ -1115,8 +1115,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *expanded_section = layout_create_expanded_section(state->layout, &expanded_widgets);
     state->visualizer_box = expanded_widgets.visualizer_box;  // Store reference
 
-    // Initialize volume
-    state->volume = volume_init(NULL, state->layout->is_vertical);
+    // Initialize volume (NULL bus_name initially, will be set when player connects)
+    state->volume = volume_init(NULL, NULL, state->layout->is_vertical);
 
     GtkWidget *expanded_with_volume;
     if (state->layout->is_vertical) {

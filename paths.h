@@ -3,6 +3,20 @@
 
 #include <glib.h>
 
+/**
+ * Volume control method configuration.
+ * Determines how HyprWave controls player volume.
+ */
+typedef enum {
+    VOLUME_METHOD_AUTO,      // Try PipeWire first, fall back to MPRIS
+    VOLUME_METHOD_PIPEWIRE,  // PipeWire sink-input only (fails for network players)
+    VOLUME_METHOD_MPRIS      // MPRIS Volume property only (fails for Chromium/Roon)
+} VolumeMethod;
+
+// Get the volume control method from config file
+// Returns VOLUME_METHOD_AUTO if not configured
+VolumeMethod get_config_volume_method(void);
+
 // Get the path to an icon file
 // Tries in order: ./icons/, ~/.local/share/hyprwave/icons/, /usr/share/hyprwave/icons/
 gchar* get_icon_path(const gchar *icon_name);

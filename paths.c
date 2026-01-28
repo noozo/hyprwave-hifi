@@ -124,3 +124,25 @@ gchar* get_config_theme(void) {
 void free_path(gchar *path) {
     g_free(path);
 }
+
+VolumeMethod get_config_volume_method(void) {
+    gchar *config_file = g_build_filename(g_get_user_config_dir(), "hyprwave", "config.conf", NULL);
+    VolumeMethod method = VOLUME_METHOD_AUTO;  // default
+
+    GKeyFile *keyfile = g_key_file_new();
+    if (g_key_file_load_from_file(keyfile, config_file, G_KEY_FILE_NONE, NULL)) {
+        gchar *value = g_key_file_get_string(keyfile, "General", "volume_method", NULL);
+        if (value) {
+            if (g_strcmp0(value, "pipewire") == 0) {
+                method = VOLUME_METHOD_PIPEWIRE;
+            } else if (g_strcmp0(value, "mpris") == 0) {
+                method = VOLUME_METHOD_MPRIS;
+            }
+            // "auto" or any other value stays as VOLUME_METHOD_AUTO
+            g_free(value);
+        }
+    }
+    g_key_file_free(keyfile);
+    g_free(config_file);
+    return method;
+}
