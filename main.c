@@ -735,7 +735,7 @@ static void update_metadata(AppState *state) {
         gtk_label_set_text(GTK_LABEL(state->artist_label), "Unknown Artist");
     }
     
-    load_album_art_to_container(art_url, state->album_cover, 240);
+    load_album_art_to_container(art_url, state->album_cover, 300);
     
     if (state->current_player) {
         GError *error = NULL;
@@ -1048,7 +1048,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *album_cover = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     state->album_cover = album_cover;
     gtk_widget_add_css_class(album_cover, "album-cover");
-    gtk_widget_set_size_request(album_cover, 240, 240);
+    gtk_widget_set_size_request(album_cover, 300, 300);
     gtk_widget_set_halign(album_cover, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(album_cover, GTK_ALIGN_CENTER);
     gtk_widget_set_hexpand(album_cover, FALSE);

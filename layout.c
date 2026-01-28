@@ -247,11 +247,14 @@ GtkWidget* layout_create_expanded_section(LayoutConfig *config, ExpandedWidgets 
         gtk_widget_set_halign(expanded_section, GTK_ALIGN_CENTER);
         gtk_widget_set_valign(expanded_section, GTK_ALIGN_CENTER);
 
-        // Visualizer at top of expanded section
-        gtk_widget_set_size_request(widgets->visualizer_box, 180, 40);
+        // Album cover first
+        gtk_box_append(GTK_BOX(expanded_section), widgets->album_cover);
+
+        // Visualizer below album art with fixed size
+        gtk_widget_set_size_request(widgets->visualizer_box, 300, 40);
+        gtk_widget_set_vexpand(widgets->visualizer_box, FALSE);
         gtk_box_append(GTK_BOX(expanded_section), widgets->visualizer_box);
 
-        gtk_box_append(GTK_BOX(expanded_section), widgets->album_cover);
         gtk_box_append(GTK_BOX(expanded_section), widgets->player_label);
         gtk_box_append(GTK_BOX(expanded_section), widgets->track_title);
         gtk_box_append(GTK_BOX(expanded_section), widgets->artist_label);
@@ -259,11 +262,16 @@ GtkWidget* layout_create_expanded_section(LayoutConfig *config, ExpandedWidgets 
         gtk_box_append(GTK_BOX(expanded_section), widgets->time_remaining);
 
     } else {
-        // Horizontal layout: album on left, info on right
+        // Horizontal layout: album+visualizer on left, info on right
         expanded_section = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
         gtk_widget_add_css_class(expanded_section, "expanded-section-horizontal");
         gtk_widget_set_halign(expanded_section, GTK_ALIGN_CENTER);
         gtk_widget_set_valign(expanded_section, GTK_ALIGN_CENTER);
+
+        // Left column: album cover + visualizer below it
+        GtkWidget *left_column = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+        gtk_widget_set_valign(left_column, GTK_ALIGN_CENTER);
+        gtk_widget_set_halign(left_column, GTK_ALIGN_CENTER);
 
         // Info panel (right side)
         GtkWidget *info_panel = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
@@ -285,10 +293,15 @@ GtkWidget* layout_create_expanded_section(LayoutConfig *config, ExpandedWidgets 
         gtk_box_append(GTK_BOX(info_panel), widgets->progress_bar);
         gtk_box_append(GTK_BOX(info_panel), widgets->time_remaining);
 
-        // Visualizer below album art
-        gtk_widget_set_size_request(widgets->visualizer_box, -1, 30);
+        // Visualizer below album art with fixed height
+        gtk_widget_set_size_request(widgets->visualizer_box, 300, 40);
+        gtk_widget_set_vexpand(widgets->visualizer_box, FALSE);
 
-        gtk_box_append(GTK_BOX(expanded_section), widgets->album_cover);
+        // Build left column: album cover on top, visualizer below
+        gtk_box_append(GTK_BOX(left_column), widgets->album_cover);
+        gtk_box_append(GTK_BOX(left_column), widgets->visualizer_box);
+
+        gtk_box_append(GTK_BOX(expanded_section), left_column);
         gtk_box_append(GTK_BOX(expanded_section), info_panel);
     }
 

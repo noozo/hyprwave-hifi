@@ -186,9 +186,10 @@ VisualizerState* visualizer_init(gboolean is_vertical) {
         gtk_widget_set_size_request(container, -1, 200);
     } else {
         // Horizontal layout: bars stack horizontally, grow vertically
+        // Fixed height of 32px to prevent jumping when bar heights change
         gtk_widget_set_halign(container, GTK_ALIGN_CENTER);
         gtk_widget_set_valign(container, GTK_ALIGN_END);
-        gtk_widget_set_size_request(container, 275, -1);
+        gtk_widget_set_size_request(container, 275, 32);
     }
 
     gtk_widget_set_hexpand(container, FALSE);
