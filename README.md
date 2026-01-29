@@ -26,6 +26,18 @@ It will not give you the bleeding new updates, but the latest releases.
 
 Style hyprwave to your taste via the style.css!
 
+## OCTANE THEME 
+
+<img width="1366" height="768" alt="2026-01-30 00-05-13" src="https://github.com/user-attachments/assets/777942b8-5be2-46bf-be2b-209f4c8eb7e7" />
+<img width="1366" height="768" alt="2026-01-30 00-04-10" src="https://github.com/user-attachments/assets/4c230ca6-4b08-42fd-8a86-eb42f16ef1aa" />
+<img width="1366" height="768" alt="2026-01-30 00-04-29" src="https://github.com/user-attachments/assets/8c0d18a9-ee99-4455-9cd3-0c13f5082303" />
+<img width="1366" height="768" alt="2026-01-30 00-04-46" src="https://github.com/user-attachments/assets/e5cce51b-8bdd-4e69-b5f6-5a71456dc459" />
+
+<img width="629" height="351" alt="2026-01-29 18-10-19" src="https://github.com/user-attachments/assets/88fab7b1-160e-496d-9836-27cc5db8dbd5" />
+
+Check out THEMES.md to get the theme, and more!
+
+
 ## Screenshots & GIFs
 
 ### Vertical Layout
