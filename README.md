@@ -6,7 +6,9 @@ Updates till now: Multi-Anchor support, Notifications, Music Controls, CSS Styli
 
 Built and primarily tested on Niri, for all Wayland compositors that support GTK4 and GTK4-layer-shell.
 
-Also, Massive update - hyprwave is now on AUR. 
+## Installation
+### Arch(-based)
+Also, Massive update - hyprwave is now on AUR.
 Simply install it with:
 
 ```bash
@@ -14,6 +16,24 @@ yay -S hyprwave
 ```
 
 It will not give you the bleeding new updates, but the latest releases.
+
+### NixOS
+Installing the package:
+1. Download the `default.nix` File.
+2. Add the package to your `configuration.nix` or `flake.nix`:
+```nix
+let
+  hyprwave = pkgs.callPackage ./path/to/default.nix { };
+in
+...
+environment.systemPackages = with pkgs; [
+  hyprwave
+];
+```
+3. Rebuild.
+
+Testing the package without installing:
+1. Run `nix run github:shantanubaddar/hyprwave`.
 
 # Your Control Bar, Your Imagination
 
