@@ -6,7 +6,7 @@ Updates till now: Multi-Anchor support, Notifications, Music Controls, CSS Styli
 
 Built and primarily tested on Niri, for all Wayland compositors that support GTK4 and GTK4-layer-shell.
 
-
+Check out the subreddit for posting your rices, themes, favorite albums -> https://www.reddit.com/r/hyprwave/
 
 # Your Control Bar, Your Imagination
 
