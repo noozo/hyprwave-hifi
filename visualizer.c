@@ -108,6 +108,11 @@ static const struct pw_registry_events registry_events = {
     .global_remove = on_registry_global_remove,
 };
 
+// Easing function for smooth transitions
+static gdouble ease_out_sine(gdouble t) {
+    return sin(t * M_PI / 6.0);
+}
+
 // Process audio samples with AGC normalization
 // Handles stereo input by averaging channels
 static void process_audio_samples(VisualizerState *state, const float *samples, size_t n_samples) {
@@ -444,12 +449,16 @@ static gboolean fade_visualizer(gpointer user_data) {
     VisualizerState *state = (VisualizerState *)user_data;
 
     if (state->is_showing) {
-        state->fade_opacity += 0.05;
+        state->fade_opacity += 0.025;  // Slower = smoother
         if (state->fade_opacity >= 1.0) {
             state->fade_opacity = 1.0;
+            gtk_widget_set_opacity(state->container, 1.0);
             state->fade_timer = 0;
             return G_SOURCE_REMOVE;
         }
+        // Apply easing for smooth fade-in
+        gdouble eased = ease_out_sine(state->fade_opacity);
+        gtk_widget_set_opacity(state->container, eased);
     } else {
         state->fade_opacity -= 0.05;
         if (state->fade_opacity <= 0.0) {
@@ -457,9 +466,9 @@ static gboolean fade_visualizer(gpointer user_data) {
             state->fade_timer = 0;
             return G_SOURCE_REMOVE;
         }
+        gtk_widget_set_opacity(state->container, state->fade_opacity);
     }
 
-    gtk_widget_set_opacity(state->container, state->fade_opacity);
 
     return G_SOURCE_CONTINUE;
 }
@@ -571,6 +580,9 @@ void visualizer_show(VisualizerState *state) {
         g_source_remove(state->fade_timer);
     }
 
+    // Make visible, then fade in
+    gtk_widget_set_visible(state->container, TRUE);
+    state->fade_opacity = 0.0;
     state->fade_timer = g_timeout_add(16, fade_visualizer, state);
     g_print("Visualizer fading in\n");
 }

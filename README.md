@@ -2,7 +2,7 @@
 
 A sleek music control overlay for Wayland with **per-application volume control** and **PipeWire-native audio visualization**.
 
-This is a HiFi-focused fork of [hyprwave](https://github.com/shantanubaddar/hyprwave) with enhanced audio integration for audiophile setups.
+This is a HiFi-focused fork of [hyprwave](https://github.com/shantanubaddar/hyprwave) with enhanced audio integration for audiophile setups. Includes per-application volume control, PipeWire-native visualization, vertical display mode, and idle mode animations.
 
 <p align="center">
   <img src="screenshots/dark-expanded.png" alt="Expanded view with visualizer" width="280">
@@ -18,6 +18,8 @@ This is a HiFi-focused fork of [hyprwave](https://github.com/shantanubaddar/hypr
 | **Volume Independence** | Tied to volume level | AGC normalizes dynamics |
 | **Album Art** | Standard size | Larger, prominent display |
 | **Visualizer Position** | Replaces controls | Below album art in expanded view |
+
+Check out the subreddit for posting your rices, themes, favorite albums -> https://www.reddit.com/r/hyprwave/
 
 ### Per-Application Volume Control
 
@@ -64,6 +66,10 @@ The visualizer uses PipeWire's native API directly (not the PulseAudio compatibi
 - **Keybind Support** - Toggle visibility and expand with keyboard shortcuts
 - **Minimal Resources** - ~80-95MB RAM, <0.3% CPU idle
 
+## Themes
+
+Check out THEMES.md for community themes! Style hyprwave to your taste via the style.css.
+
 ## Installation
 
 ### Dependencies
@@ -78,6 +84,33 @@ sudo apt install libgtk-4-dev gtk4-layer-shell libpipewire-0.3-dev
 # Fedora
 sudo dnf install gtk4-devel gtk4-layer-shell-devel pipewire-devel
 ```
+### Arch(-based)
+Also, Massive update - hyprwave is now on AUR.
+Simply install it with:
+
+```bash
+yay -S hyprwave
+```
+
+It will not give you the bleeding new updates, but the latest releases.
+
+### NixOS
+Installing the package:
+1. Download the `default.nix` File.
+2. Add the package to your `configuration.nix` or `flake.nix`:
+```nix
+let
+  hyprwave = pkgs.callPackage ./path/to/default.nix { };
+in
+...
+environment.systemPackages = with pkgs; [
+  hyprwave
+];
+```
+3. Rebuild.
+
+Testing the package without installing:
+1. Run `nix run github:shantanubaddar/hyprwave`.
 
 ### Building from Source
 
@@ -131,6 +164,8 @@ spawn-at-startup "hyprwave"
 Edit `~/.config/hyprwave/config.conf`:
 
 ```conf
+# HyprWave Configuration File
+
 [General]
 # Position: right, left, top, bottom
 edge = right
@@ -151,6 +186,14 @@ enabled = true
 
 # Seconds before visualizer activates (0 to disable auto-activation)
 idle_timeout = 30
+
+[VerticalDisplay]
+enabled = true
+idle_timeout = 5
+
+[MusicPlayer]
+# Comma-separated list of preferred players (first = highest priority)
+preference = spotify,vlc
 ```
 
 ### Layout Options
@@ -159,6 +202,86 @@ idle_timeout = 30
 |------|--------|------------|
 | `right` / `left` | Vertical | In expanded section (below album art) |
 | `top` / `bottom` | Horizontal | In expanded section |
+
+**Notification Options:**
+- **`enabled = true`** - Master switch for all notifications
+- **`now_playing = true`** - Show "Now Playing" notifications when tracks change
+
+**Visualizer Options:**
+- **`enabled = true`** - Enable audio visualizer
+- **`idle_timeout = 30`** - Seconds of inactivity before visualizer appears (0 to disable)
+
+**Dot Matrix Display Options (Vertical):**
+- **`enabled = true`** - Enable dot matrix display for vertical layouts
+- **`idle_timeout = 5`** - Seconds of inactivity before display appears
+
+### Keybinds
+
+HyprWave supports keybinds for toggling visibility and expanding details. Add these to your compositor config:
+
+#### Hyprland
+
+Add to `~/.config/hypr/hyprland.conf`:
+
+```conf
+# HyprWave keybinds
+bind = SUPER_SHIFT, M, exec, hyprwave-toggle visibility
+bind = SUPER, M, exec, hyprwave-toggle expand
+```
+
+Then reload: `hyprctl reload`
+
+#### Niri
+
+Add to `~/.config/niri/config.kdl`:
+
+```kdl
+binds {
+    Mod+Shift+M { spawn "hyprwave-toggle" "visibility"; }
+    Mod+M { spawn "hyprwave-toggle" "expand"; }
+}
+```
+
+Then reload: `niri msg action reload-config`
+
+#### Sway
+
+Add to `~/.config/sway/config`:
+
+```conf
+# HyprWave keybinds
+bindsym $mod+Shift+M exec hyprwave-toggle visibility
+bindsym $mod+M exec hyprwave-toggle expand
+```
+
+Then reload: `swaymsg reload`
+
+#### What the Keybinds Do:
+
+- **Toggle Visibility** (`Super+Shift+M`) - Smoothly hides/shows entire HyprWave with slide animation
+- **Toggle Expand** (`Super+M`) - Shows/hides album details
+  - Works even in visualizer mode - expanded section appears without exiting idle mode
+  - If HyprWave is hidden, this will show it AND expand in one smooth motion
+
+### Keybind Demo
+
+https://github.com/user-attachments/assets/5bd27ec4-6b51-46fb-bf6e-fcb3cb3252b1
+
+### Auto-start
+
+#### Hyprland
+
+Add to `~/.config/hypr/hyprland.conf`:
+```conf
+exec-once = hyprwave
+```
+
+#### Niri
+
+Add to `~/.config/niri/config.kdl`:
+```kdl
+spawn-at-startup "hyprwave"
+```
 
 ## Troubleshooting
 
@@ -214,6 +337,14 @@ The Automatic Gain Control normalizes audio levels so visualization responds to 
 - **GTK4:** [gtk.org](https://gtk.org/)
 - **Layer shell:** [gtk4-layer-shell](https://github.com/wmww/gtk-layer-shell)
 - **Audio:** [PipeWire](https://pipewire.org/)
+
+## Contributing
+
+Contributions welcome! Feel free to:
+- Report bugs via [GitHub Issues](https://github.com/godlyfast/hyprwave-hifi/issues)
+- Submit feature requests
+- Create pull requests
+- Share your custom themes/icons
 
 ## License
 

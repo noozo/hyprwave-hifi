@@ -22,6 +22,10 @@ typedef struct {
     gchar *theme;  // "light" or "dark" (Hi-Fi feature)
     gboolean visualizer_enabled;
     gint visualizer_idle_timeout;
+    gboolean vertical_display_enabled;
+    gint vertical_display_scroll_interval;
+    gchar **player_preference;             // Array of preferred players (e.g., ["spotify", "vlc"])
+    gint player_preference_count;          // Number of preferred players
 } LayoutConfig;
 
 typedef struct {
