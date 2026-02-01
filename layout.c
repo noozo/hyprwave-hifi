@@ -29,6 +29,13 @@ gchar *default_config =
     "# Margin from the screen edge (in pixels)\n"
     "margin = 10\n"
     "\n"
+    "[MusicPlayer]\n"
+    "# Comma-separated list of preferred music players (first = highest priority)\n"
+    "# HyprWave will search for these in order and latch onto the first one found\n"
+    "# Leave empty to connect to any available player\n"
+    "# Common names: spotify, vlc, firefox, chromium, mpd, rhythmbox, strawberry\n"
+    "preference = spotify,vlc\n"
+    "\n"
     "[Keybinds]\n"
     "# Toggle HyprWave visibility (hide/show entire window)\n"
     "toggle_visibility = Super+Shift+M\n"
@@ -49,7 +56,14 @@ gchar *default_config =
     "\n"
     "# Idle timeout in seconds before visualizer appears\n"
     "# Set to 0 to disable auto-activation (visualizer only shows on demand)\n"
-    "idle_timeout = 30\n";
+    "idle_timeout = 30\n"
+    "[VerticalDisplay]\n"                    // ADD THIS ENTIRE SECTION
+    "# Enable/disable vertical display (vertical layout only)\n"
+    "enabled = true\n"
+    "\n"
+    "# Idle timeout in seconds before vertical display appears\n"
+    "# Set to 0 to disable auto-activation (display only shows on demand)\n"
+    "idle_timeout = 5\n";
         
         g_file_set_contents(config_file, default_config, -1, NULL);
         g_print("Created default config at: %s\n", config_file);
@@ -66,7 +80,12 @@ config->toggle_expand_bind = g_strdup("Super+M");
 config->notifications_enabled = TRUE;
 config->now_playing_enabled = TRUE;
 config->visualizer_enabled = TRUE;          // NEW
-config->visualizer_idle_timeout = 30;       // NEW
+config->visualizer_idle_timeout = 30;
+config->vertical_display_enabled = TRUE;        // ADD THIS
+config->vertical_display_scroll_interval = 5;  // 5 second idle timeout (was 60)
+config->player_preference = NULL;               // NEW - No preference by default
+config->player_preference_count = 0;            // NEW
+
     
     if (g_key_file_load_from_file(keyfile, config_file, G_KEY_FILE_NONE, NULL)) {
         // Load General section
@@ -135,6 +154,70 @@ gboolean now_playing = g_key_file_get_boolean(keyfile, "Notifications", "now_pla
         } else {
             g_error_free(error);
         }
+    
+    
+        gboolean vert_enabled = g_key_file_get_boolean(keyfile, "VerticalDisplay", "enabled", &error);
+        if (!error) {
+            config->vertical_display_enabled = vert_enabled;
+        } else {
+            g_error_free(error);
+            error = NULL;
+        }
+        
+        gint vert_timeout = g_key_file_get_integer(keyfile, "VerticalDisplay", "idle_timeout", &error);
+        if (!error) {
+            config->vertical_display_scroll_interval = vert_timeout;
+            if (config->vertical_display_scroll_interval < 0) config->vertical_display_scroll_interval = 0;
+        } else {
+            g_error_free(error);
+        }
+        
+        // Load MusicPlayer section - NEW
+        error = NULL;
+        gchar *player_pref_str = g_key_file_get_string(keyfile, "MusicPlayer", "preference", &error);
+        if (!error && player_pref_str && strlen(player_pref_str) > 0) {
+            // Split by comma and trim whitespace
+            gchar **raw_list = g_strsplit(player_pref_str, ",", -1);
+            gint raw_count = g_strv_length(raw_list);
+            
+            // Count non-empty entries
+            gint valid_count = 0;
+            for (gint i = 0; i < raw_count; i++) {
+                gchar *trimmed = g_strstrip(g_strdup(raw_list[i]));
+                if (strlen(trimmed) > 0) {
+                    valid_count++;
+                }
+                g_free(trimmed);
+            }
+            
+            // Allocate array for valid entries
+            if (valid_count > 0) {
+                config->player_preference = g_new0(gchar*, valid_count + 1);  // NULL-terminated
+                config->player_preference_count = valid_count;
+                
+                gint idx = 0;
+                for (gint i = 0; i < raw_count; i++) {
+                    gchar *trimmed = g_strstrip(g_strdup(raw_list[i]));
+                    if (strlen(trimmed) > 0) {
+                        config->player_preference[idx++] = trimmed;  // Transfer ownership
+                    } else {
+                        g_free(trimmed);
+                    }
+                }
+                
+                g_print("Player preference: ");
+                for (gint i = 0; i < config->player_preference_count; i++) {
+                    g_print("%s%s", config->player_preference[i], 
+                           i < config->player_preference_count - 1 ? ", " : "");
+                }
+                g_print("\n");
+            }
+            
+            g_strfreev(raw_list);
+            g_free(player_pref_str);
+        } else if (error) {
+            g_error_free(error);
+        }
     }
     config->is_vertical = (config->edge == EDGE_RIGHT || config->edge == EDGE_LEFT);
     
@@ -155,6 +238,9 @@ void layout_free_config(LayoutConfig *config) {
     if (config) {
         g_free(config->toggle_visibility_bind);
         g_free(config->toggle_expand_bind);
+        if (config->player_preference) {
+            g_strfreev(config->player_preference);
+        }
         g_free(config);
     }
 }
