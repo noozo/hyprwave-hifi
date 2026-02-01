@@ -4,6 +4,11 @@
 
 #define SMOOTHING_FACTOR 0.7
 
+// Replace ease_in_out_cubic with this:
+static gdouble ease_out_sine(gdouble t) {
+    return sin(t * M_PI / 6.0);  // hope this makes the transition smooth?
+}
+
 // Process audio samples into bar heights
 static void process_audio_samples(VisualizerState *state, const float *samples, size_t n_samples) {
     size_t samples_per_bin = n_samples / VISUALIZER_BARS;
@@ -92,25 +97,18 @@ static gboolean fade_visualizer(gpointer user_data) {
     VisualizerState *state = (VisualizerState *)user_data;
     
     if (state->is_showing) {
-        // Fade in
-        state->fade_opacity += 0.05;
+        state->fade_opacity += 0.025;  // Was 0.05, now slower = smoother
         if (state->fade_opacity >= 1.0) {
             state->fade_opacity = 1.0;
+            gtk_widget_set_opacity(state->container, 1.0);
             state->fade_timer = 0;
             return G_SOURCE_REMOVE;
         }
-    } else {
-        // Fade out
-        state->fade_opacity -= 0.05;
-        if (state->fade_opacity <= 0.0) {
-            state->fade_opacity = 0.0;
-            state->fade_timer = 0;
-            return G_SOURCE_REMOVE;
-        }
+        
+        // MAGIC LINE - Apply easing!
+        gdouble eased = ease_out_sine(state->fade_opacity);
+        gtk_widget_set_opacity(state->container, eased);
     }
-    
-    // Apply opacity to container too (not just bars)
-    gtk_widget_set_opacity(state->container, state->fade_opacity);
     
     return G_SOURCE_CONTINUE;
 }
@@ -230,34 +228,36 @@ VisualizerState* visualizer_init() {
     return state;
 }
 
-void visualizer_show(VisualizerState *state) {
-    if (!state || state->is_showing) return;
-    
-    state->is_showing = TRUE;
-    
-    // Cancel existing fade timer
-    if (state->fade_timer > 0) {
-        g_source_remove(state->fade_timer);
-    }
-    
-    // Start fade-in animation
-    state->fade_timer = g_timeout_add(16, fade_visualizer, state);  // ~60fps
-    g_print("Visualizer fading in\n");
-}
-
 void visualizer_hide(VisualizerState *state) {
     if (!state || !state->is_showing) return;
     
     state->is_showing = FALSE;
     
-    // Cancel existing fade timer
     if (state->fade_timer > 0) {
         g_source_remove(state->fade_timer);
     }
     
-    // Start fade-out animation
-    state->fade_timer = g_timeout_add(16, fade_visualizer, state);  // ~60fps
-    g_print("Visualizer fading out\n");
+    // INSTANT hide - no fade
+    gtk_widget_set_visible(state->container, FALSE);
+    
+    g_print("Visualizer hidden (instant)\n");
+}
+
+void visualizer_show(VisualizerState *state) {
+    if (!state || state->is_showing) return;
+    
+    state->is_showing = TRUE;
+    
+    if (state->fade_timer > 0) {
+        g_source_remove(state->fade_timer);
+    }
+    
+    // Make visible, then fade in
+    gtk_widget_set_visible(state->container, TRUE);
+    state->fade_opacity = 0.0;
+    state->fade_timer = g_timeout_add(16, fade_visualizer, state);
+    
+    g_print("Visualizer fading in\n");
 }
 
 void visualizer_start(VisualizerState *state) {
