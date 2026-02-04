@@ -8,17 +8,18 @@ if [ -z "$ACTION" ]; then
     exit 1
 fi
 
-if ! pgrep -x hyprwave > /dev/null; then
+PID=$(pgrep -x hyprwave)
+if [ -z "$PID" ]; then
     echo "HyprWave is not running"
     exit 1
 fi
 
 case "$ACTION" in
     visibility)
-        pkill -SIGUSR1 hyprwave
+        kill -USR1 "$PID"
         ;;
     expand)
-        pkill -SIGUSR2 hyprwave
+        kill -USR2 "$PID"
         ;;
     *)
         echo "Invalid action: $ACTION"

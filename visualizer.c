@@ -352,10 +352,16 @@ static void on_registry_global_remove(void *data, uint32_t id) {
     }
 }
 
-// Connect pw_stream to capture audio from the default sink monitor
-// This captures playback audio (what's being played), not microphone input
+// Connect pw_stream to capture audio from a specific player's node
+// Only connects if a target node has been found; no fallback to system audio
 static void connect_to_target(VisualizerState *state) {
     if (!state->pw_stream) return;
+
+    // Only connect to a specific player's audio node, never system-wide
+    if (!state->target_found || state->target_node_id == 0) {
+        g_print("Visualizer: No target node found, skipping connection\n");
+        return;
+    }
 
     // Disconnect existing connection first
     pw_stream_disconnect(state->pw_stream);
@@ -364,7 +370,7 @@ static void connect_to_target(VisualizerState *state) {
     uint8_t buffer[1024];
     struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
 
-    // Request float audio, stereo (sink monitors are typically stereo), 48kHz
+    // Request float audio, stereo, 48kHz
     const struct spa_pod *params[1];
     params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat,
             &SPA_AUDIO_INFO_RAW_INIT(
@@ -372,7 +378,8 @@ static void connect_to_target(VisualizerState *state) {
                 .channels = 2,
                 .rate = 48000));
 
-    g_print("Visualizer: Connecting to sink monitor (AGC-normalized)\n");
+    g_print("Visualizer: Connecting to player node %u '%s' (AGC-normalized)\n",
+            state->target_node_id, state->target_node_name ? state->target_node_name : "?");
 
     // Update stream properties to request capture from a sink (not source)
     pw_stream_update_properties(state->pw_stream,
@@ -383,7 +390,7 @@ static void connect_to_target(VisualizerState *state) {
 
     pw_stream_connect(state->pw_stream,
                       PW_DIRECTION_INPUT,
-                      PW_ID_ANY,
+                      state->target_node_id,
                       PW_STREAM_FLAG_AUTOCONNECT |
                       PW_STREAM_FLAG_RT_PROCESS |
                       PW_STREAM_FLAG_MAP_BUFFERS,
@@ -643,8 +650,8 @@ void visualizer_start(VisualizerState *state) {
     pw_stream_add_listener(state->pw_stream, &state->stream_listener,
                            &stream_events, state);
 
-    // Connect to audio immediately
-    connect_to_target(state);
+    // Don't connect immediately - wait for registry to find the target player's node
+    // connect_to_target() will be called from on_registry_global() when matched
 
     pw_thread_loop_unlock(state->pw_loop);
 

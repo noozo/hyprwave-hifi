@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <signal.h>
+#include <glib-unix.h>
 #include "layout.h"
 #include "paths.h"
 #include "notification.h"
@@ -425,8 +426,8 @@ static void on_window_hide_complete(GObject *revealer, GParamSpec *pspec, gpoint
     }
 }
 
-static void handle_sigusr1(int sig) {
-    if (!global_state) return;
+static gboolean handle_sigusr1(gpointer user_data) {
+    if (!global_state) return G_SOURCE_CONTINUE;
     global_state->is_visible = !global_state->is_visible;
 
     if (!global_state->is_visible) {
@@ -481,12 +482,13 @@ static void handle_sigusr1(int sig) {
             }
         }
     }
+    return G_SOURCE_CONTINUE;
 }
 
 
-static void handle_sigusr2(int sig) {
-    if (!global_state) return;
-    if (!global_state->is_visible) return;
+static gboolean handle_sigusr2(gpointer user_data) {
+    if (!global_state) return G_SOURCE_CONTINUE;
+    if (!global_state->is_visible) return G_SOURCE_CONTINUE;
 
     // If in idle mode, allow expansion but keep display running
     if (global_state->is_idle_mode) {
@@ -513,11 +515,12 @@ static void handle_sigusr2(int sig) {
         free_path(icon_path);
         gtk_revealer_set_reveal_child(GTK_REVEALER(global_state->revealer), global_state->is_expanded);
 
-        return;
+        return G_SOURCE_CONTINUE;
     }
 
     // Normal expand toggle (not in idle mode)
     on_expand_clicked(NULL, global_state);
+    return G_SOURCE_CONTINUE;
 }
 
 
@@ -530,6 +533,16 @@ static void handle_sigusr2(int sig) {
 // Start visualizer when expanded (Hi-Fi feature)
 static void start_visualizer_if_expanded(AppState *state) {
     if (!state->visualizer || !state->layout->visualizer_enabled) return;
+    // Hide visualizer box entirely if no player audio target found
+    if (!state->visualizer->target_found) {
+        if (state->visualizer_box) {
+            gtk_widget_set_visible(state->visualizer_box, FALSE);
+        }
+        return;
+    }
+    if (state->visualizer_box) {
+        gtk_widget_set_visible(state->visualizer_box, TRUE);
+    }
     if (!state->visualizer->is_running) {
         visualizer_start(state->visualizer);
         g_print("✓ Visualizer started (expanded)\n");
@@ -1778,8 +1791,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
     // FINALIZE
     // ========================================
     global_state = state;
-    signal(SIGUSR1, handle_sigusr1);
-    signal(SIGUSR2, handle_sigusr2);
+    g_unix_signal_add(SIGUSR1, handle_sigusr1, NULL);
+    g_unix_signal_add(SIGUSR2, handle_sigusr2, NULL);
 
     // Setup D-Bus name watcher to monitor player appearance/disappearance
     GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, NULL);
