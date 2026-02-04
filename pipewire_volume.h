@@ -74,6 +74,14 @@ guint32 pw_extract_pid_from_bus_name(const gchar *mpris_bus_name);
 gint pw_find_sink_input_by_app_name(const gchar *app_name);
 
 /**
+ * Find the PipeWire sink (output device) that a sink-input is connected to.
+ *
+ * @param sink_input_index The sink-input index
+ * @return The sink index (also the PipeWire node ID), or -1 if not found
+ */
+gint pw_find_sink_for_input(gint sink_input_index);
+
+/**
  * Check if pactl is available on the system.
  *
  * @return TRUE if pactl command exists, FALSE otherwise

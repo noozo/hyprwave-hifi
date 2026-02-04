@@ -15,6 +15,7 @@
 typedef struct {
     guint32 id;
     guint32 pid;
+    guint32 driver_id;    // Sink node this stream is connected to
     gchar *name;
     gchar *app_name;
 } AudioNodeInfo;
@@ -275,10 +276,12 @@ static void on_registry_global(void *data, uint32_t id, uint32_t permissions,
     }
 
     // Cache this audio node for later searching
+    const char *cache_driver_str = spa_dict_lookup(props, PW_KEY_NODE_DRIVER_ID);
     if (state->audio_nodes) {
         AudioNodeInfo *info = g_new0(AudioNodeInfo, 1);
         info->id = id;
         info->pid = (guint32)node_serial;  // Store serial in pid field for cache
+        info->driver_id = cache_driver_str ? (guint32)atoi(cache_driver_str) : 0;
         info->name = g_strdup(node_name);
         info->app_name = g_strdup(app_name);
         g_hash_table_insert(state->audio_nodes, GUINT_TO_POINTER(id), info);
@@ -292,16 +295,20 @@ static void on_registry_global(void *data, uint32_t id, uint32_t permissions,
         return;
     }
 
-    g_print("✓ Found target audio node: id=%u serial=%d app='%s'\n",
-            id, node_serial, app_name ? app_name : "?");
+    // Get the sink this stream is connected to (node.driver-id)
+    const char *driver_str = spa_dict_lookup(props, PW_KEY_NODE_DRIVER_ID);
+    uint32_t sink_id = driver_str ? (uint32_t)atoi(driver_str) : 0;
 
-    // Store target info
-    state->target_node_id = id;
+    g_print("✓ Found target audio node: id=%u serial=%d app='%s' sink=%u\n",
+            id, node_serial, app_name ? app_name : "?", sink_id);
+
+    // Store target info — use the sink ID for capture (not the stream node)
+    state->target_node_id = sink_id > 0 ? sink_id : id;
     g_free(state->target_node_name);
     state->target_node_name = g_strdup(app_name ? app_name : node_name);
     state->target_found = TRUE;
 
-    // Connect stream to this node
+    // Connect to the sink's monitor to capture this player's audio
     connect_to_target(state);
 }
 
@@ -317,11 +324,12 @@ static void search_cached_nodes_for_target(VisualizerState *state) {
         AudioNodeInfo *info = (AudioNodeInfo *)value;
         // info->pid is actually the serial number (we stored it there)
         if ((gint)info->pid == state->target_serial) {
-            g_print("Found cached audio node for serial %d: id=%u app='%s'\n",
-                    state->target_serial, info->id,
+            uint32_t sink_id = info->driver_id > 0 ? info->driver_id : info->id;
+            g_print("Found cached audio node for serial %d: id=%u sink=%u app='%s'\n",
+                    state->target_serial, info->id, sink_id,
                     info->app_name ? info->app_name : "?");
 
-            state->target_node_id = info->id;
+            state->target_node_id = sink_id;
             g_free(state->target_node_name);
             state->target_node_name = g_strdup(info->app_name ? info->app_name : info->name);
             state->target_found = TRUE;
@@ -357,9 +365,14 @@ static void on_registry_global_remove(void *data, uint32_t id) {
 static void connect_to_target(VisualizerState *state) {
     if (!state->pw_stream) return;
 
-    // Only connect to a specific player's audio node, never system-wide
-    if (!state->target_found || state->target_node_id == 0) {
-        g_print("Visualizer: No target node found, skipping connection\n");
+    // Need either a known sink or a matched target node
+    uint32_t capture_node = 0;
+    if (state->target_sink_id > 0) {
+        capture_node = (uint32_t)state->target_sink_id;
+    } else if (state->target_found && state->target_node_id > 0) {
+        capture_node = state->target_node_id;
+    } else {
+        g_print("Visualizer: No target sink found, skipping connection\n");
         return;
     }
 
@@ -378,10 +391,10 @@ static void connect_to_target(VisualizerState *state) {
                 .channels = 2,
                 .rate = 48000));
 
-    g_print("Visualizer: Connecting to player node %u '%s' (AGC-normalized)\n",
-            state->target_node_id, state->target_node_name ? state->target_node_name : "?");
+    g_print("Visualizer: Connecting to sink node %u for '%s' (AGC-normalized)\n",
+            capture_node, state->target_node_name ? state->target_node_name : "?");
 
-    // Update stream properties to request capture from a sink (not source)
+    // Capture from the sink's monitor (not a source)
     pw_stream_update_properties(state->pw_stream,
         &SPA_DICT_INIT_ARRAY(((struct spa_dict_item[]) {
             { PW_KEY_STREAM_CAPTURE_SINK, "true" },
@@ -390,7 +403,7 @@ static void connect_to_target(VisualizerState *state) {
 
     pw_stream_connect(state->pw_stream,
                       PW_DIRECTION_INPUT,
-                      state->target_node_id,
+                      capture_node,
                       PW_STREAM_FLAG_AUTOCONNECT |
                       PW_STREAM_FLAG_RT_PROCESS |
                       PW_STREAM_FLAG_MAP_BUFFERS,
@@ -753,8 +766,12 @@ void visualizer_set_target_pid(VisualizerState *state, guint32 pid, const gchar 
 
     if (sink_input >= 0) {
         state->target_serial = sink_input;
-        g_print("Visualizer: Found sink-input %d for PID %u\n", sink_input, pid);
+        // Look up which sink this stream outputs to
+        state->target_sink_id = pw_find_sink_for_input(sink_input);
+        g_print("Visualizer: Found sink-input %d for PID %u (sink node %d)\n",
+                sink_input, pid, state->target_sink_id);
     } else {
+        state->target_sink_id = -1;
         g_print("Visualizer: No sink-input found for PID %u\n", pid);
     }
 

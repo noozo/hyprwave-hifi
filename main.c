@@ -366,6 +366,12 @@ static void switch_to_player(AppState *state, const gchar *bus_name) {
     if (state->visualizer) {
         guint32 player_pid = pw_extract_pid_from_bus_name(bus_name);
         visualizer_set_target_pid(state->visualizer, player_pid, bus_name);
+
+        // Update visualizer box visibility if currently expanded
+        if (state->is_expanded && state->visualizer_box) {
+            gboolean has_target = state->visualizer->target_serial > 0 || state->visualizer->target_found;
+            gtk_widget_set_visible(state->visualizer_box, has_target);
+        }
     }
 }
 

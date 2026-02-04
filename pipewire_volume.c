@@ -189,6 +189,51 @@ gint pw_find_sink_input_by_app_name(const gchar *app_name) {
     return found_index;
 }
 
+gint pw_find_sink_for_input(gint sink_input_index) {
+    if (sink_input_index < 0) return -1;
+
+    gchar *stdout_str = NULL;
+    gchar *stderr_str = NULL;
+    gint exit_status;
+    GError *error = NULL;
+
+    gboolean result = g_spawn_command_line_sync(
+        "pactl list sink-inputs",
+        &stdout_str, &stderr_str, &exit_status, &error);
+
+    g_free(stderr_str);
+    if (error) { g_error_free(error); return -1; }
+    if (!result || exit_status != 0 || !stdout_str) { g_free(stdout_str); return -1; }
+
+    gint current_index = -1;
+    gint found_sink = -1;
+    gchar target[32];
+    g_snprintf(target, sizeof(target), "Sink Input #%d", sink_input_index);
+
+    gchar **lines = g_strsplit(stdout_str, "\n", -1);
+    g_free(stdout_str);
+
+    gboolean in_target = FALSE;
+    for (gchar **line = lines; *line; line++) {
+        if (g_str_has_prefix(*line, "Sink Input #")) {
+            current_index = (gint)g_ascii_strtoll(*line + 12, NULL, 10);
+            in_target = (current_index == sink_input_index);
+        }
+        if (in_target && g_strstr_len(*line, -1, "Sink:")) {
+            gchar *num = g_strstrip(g_strdup(*line));
+            gchar *colon = g_strstr_len(num, -1, ":");
+            if (colon) {
+                found_sink = (gint)g_ascii_strtoll(colon + 1, NULL, 10);
+            }
+            g_free(num);
+            break;
+        }
+    }
+
+    g_strfreev(lines);
+    return found_sink;
+}
+
 /**
  * Find sink-input by checking the main PID and all its child processes.
  * This handles Chromium-based apps where audio comes from a child subprocess.

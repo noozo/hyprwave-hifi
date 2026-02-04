@@ -29,6 +29,7 @@ typedef struct {
     guint32 target_pid;           // PID of current MPRIS player
     gchar *target_bus_name;       // MPRIS bus name for app-name fallback matching
     gint target_serial;           // PipeWire object.serial (same as pactl sink-input index)
+    gint target_sink_id;          // PipeWire node ID of the sink the player outputs to
     guint32 target_node_id;       // PipeWire node ID to capture from
     gchar *target_node_name;      // Node name for logging
     gboolean target_found;        // Whether we found the target node
